@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "AttendX",
+    "slug": "attendx",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "attendx",
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AttendX needs location to verify you are in class."
+        }
+      ],
+      "expo-font"
+    ],
+    "android": {
+      "package": "com.attendx.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a14"
+      }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.attendx.app"
+    }
+  }
+}

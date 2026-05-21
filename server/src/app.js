@@ -25,12 +25,28 @@ const app    = express();
 const server = http.createServer(app);
 const io     = initSocket(server);
 
-// Make io accessible in controllers via req.app.get('io')
 app.set('io', io);
+
+// ─── CORS ─────────────────────────────────────────────────────
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://attend-x-iota.vercel.app',
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 
 // ─── Middleware ───────────────────────────────────────────────
 app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
@@ -68,52 +84,16 @@ const PORT = process.env.PORT || 5000;
 
 async function start() {
   try {
-    // Verify the database connection before anything else.
-    // Throws immediately if PostgreSQL is unreachable so we get a
-    // clear error rather than a confusing runtime failure later.
     await sequelize.authenticate();
     console.log('✅ Database connected');
-
-    // We deliberately skip sequelize.sync() here.
-    //
-    // Sequelize's alter:true mode generates incorrect ALTER TABLE
-    // statements due to association ordering — it was creating a
-    // foreign key from classes.lecturer_id → appeals instead of
-    // classes.lecturer_id → users. All tables already exist and are
-    // correct, so there is no need to sync on startup. New tables
-    // or columns should be added manually via pgAdmin.
     console.log('✅ Models ready');
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
 
-      // ── Background scheduler 1: session auto-close ─────────────
-      //
-      // Polls every 30 seconds and does two things:
-      //   1. Finds open sessions whose close_at is within 2 minutes
-      //      and sends a "closing soon" email + in-app notification
-      //      to all enrolled students.
-      //   2. Finds open sessions whose close_at has passed, marks
-      //      them as closed, emits a WebSocket event, and sends a
-      //      summary email to every enrolled student showing their
-      //      attendance status.
       const { startSessionScheduler } = require('./services/sessionScheduler');
       startSessionScheduler(io);
 
-      // ── Background scheduler 2: recurring sessions ─────────────
-      //
-      // Polls every 60 seconds and does two things:
-      //   1. Finds active ClassSchedule entries whose day_of_week
-      //      matches today and start_time matches the current minute,
-      //      then automatically opens a new session for that class
-      //      and sends an "opened" email to enrolled students.
-      //   2. Sends a "starting in 10 minutes" reminder email to
-      //      enrolled students exactly 10 minutes before each
-      //      scheduled slot starts.
-      //
-      // Uses last_triggered on each schedule to prevent opening the
-      // same slot more than once per day, even if the scheduler runs
-      // multiple times within the same minute window.
       const { startScheduleRunner } = require('./services/scheduleRunner');
       startScheduleRunner(io);
     });

@@ -23,10 +23,10 @@ const scheduleRoutes   = require('./routes/schedules');
 
 const app    = express();
 const server = http.createServer(app);
-app.set('trust proxy', 1);
 const io     = initSocket(server);
 
 app.set('io', io);
+app.set('trust proxy', 1);
 
 // ─── CORS ─────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -42,13 +42,12 @@ const corsOptions = {
     if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
-  credentials:         true,
-  methods:             ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders:      ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials:          true,
+  methods:              ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders:       ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 200,
 };
 
-// Handle preflight for every route BEFORE any other middleware
 app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
 
@@ -93,7 +92,11 @@ async function start() {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected');
-    console.log('✅ Models ready');
+
+    // Create any missing tables without dropping existing ones.
+    // Safe to run on every deploy — skips tables that already exist.
+    await sequelize.sync({ force: false });
+    console.log('✅ Tables synced');
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);

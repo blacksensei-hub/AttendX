@@ -5,10 +5,8 @@ const cors        = require('cors');
 const helmet      = require('helmet');
 const morgan      = require('morgan');
 const compression = require('compression');
-const bcrypt = require('bcryptjs');
 const initSocket  = require('./config/socket');
 const { sequelize } = require('./models');
-const { User }      = require('./models');
 
 // ─── Routes ──────────────────────────────────────────────────
 const authRoutes       = require('./routes/auth');
@@ -73,36 +71,6 @@ app.use('/api/thresholds',    thresholdRoutes);
 app.use('/api/adjustments',   adjustmentRoutes);
 app.use('/api/schedules',     scheduleRoutes);
 
-// ─── Temporary seed endpoint ──────────────────────────────────
-// Hit GET /seed-users once to create demo accounts.
-// Remove this after seeding is confirmed.
-app.get('/seed-users', async (req, res) => {
-  try {
-    const users = [
-      { name: 'Jeffrey Ankrah',   email: 'jeffreyankrah2004@gmail.com', password: 'Jeffrey@Att2026', role: 'admin'    },
-      { name: 'Jeffrey Lecturer', email: 'jeffrey.ankrah18@gmail.com',  password: 'Jeffrey@Lec2026', role: 'lecturer' },
-      { name: 'Jeffrey Student',  email: 'ankrahjeffrey21@gmail.com',   password: 'Jeffrey@Stu2026', role: 'student', student_id: 'STU001' },
-    ];
-
-    const results = [];
-    for (const u of users) {
-      const existing = await User.scope('withPassword').findOne({ where: { email: u.email } });
-      if (existing) {
-        results.push({ email: u.email, status: 'already exists' });
-        continue;
-      }
-      const hash = await bcrypt.hash(u.password, 10);
-      await User.create({ ...u, password: hash });
-      results.push({ email: u.email, status: 'created' });
-    }
-
-    res.json({ success: true, results });
-  } catch (err) {
-    console.error('[Seed] error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── Health check ─────────────────────────────────────────────
 app.get('/health', (req, res) =>
   res.json({ status: 'ok', timestamp: new Date() })
@@ -124,9 +92,7 @@ async function start() {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected');
-
-    await sequelize.sync({ force: false });
-    console.log('✅ Tables synced');
+    console.log('✅ Models ready');
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);

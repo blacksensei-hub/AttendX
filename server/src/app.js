@@ -29,24 +29,30 @@ app.set('io', io);
 
 // ─── CORS ─────────────────────────────────────────────────────
 const allowedOrigins = [
-  process.env.CLIENT_URL,
+  'https://attend-x-iota.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://attend-x-iota.vercel.app',
+  process.env.CLIENT_URL,
 ].filter(Boolean);
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
-  credentials: true,
-}));
+  credentials:         true,
+  methods:             ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders:      ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200,
+};
+
+// Handle preflight for every route BEFORE any other middleware
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 
 // ─── Middleware ───────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));

@@ -23,6 +23,7 @@ const scheduleRoutes   = require('./routes/schedules');
 
 const app    = express();
 const server = http.createServer(app);
+app.set('trust proxy', 1);
 const io     = initSocket(server);
 
 app.set('io', io);

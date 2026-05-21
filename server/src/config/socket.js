@@ -1,12 +1,25 @@
-const { Server }  = require('socket.io');
-const jwt         = require('jsonwebtoken');
+// server/src/config/socket.js
+const { Server } = require('socket.io');
+const jwt        = require('jsonwebtoken');
 
 function initSocket(httpServer) {
+  const allowedOrigins = [
+    'https://attend-x-iota.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    process.env.CLIENT_URL,
+  ].filter(Boolean);
+
   const io = new Server(httpServer, {
     cors: {
-      origin:  process.env.CLIENT_URL,
-      methods: ['GET', 'POST'],
+      origin:      allowedOrigins,
+      methods:     ['GET', 'POST'],
+      credentials: true,
     },
+    transports:         ['websocket', 'polling'],
+    allowEIO3:          true,
+    pingTimeout:        60000,
+    pingInterval:       25000,
   });
 
   // ─── Auth middleware ─────────────────────────────────────────
@@ -27,7 +40,6 @@ function initSocket(httpServer) {
   io.on('connection', (socket) => {
     console.log(`[Socket] ${socket.user.id} connected (${socket.user.role})`);
 
-    // Join a session room (lecturer joins to receive updates)
     socket.on('join-session', (sessionId) => {
       socket.join(`session:${sessionId}`);
       console.log(`[Socket] ${socket.user.id} joined session room ${sessionId}`);
@@ -37,7 +49,6 @@ function initSocket(httpServer) {
       socket.leave(`session:${sessionId}`);
     });
 
-    // Join class room (student joins their enrolled classes)
     socket.on('join-class', (classId) => {
       socket.join(`class:${classId}`);
     });
@@ -46,7 +57,7 @@ function initSocket(httpServer) {
       console.log(`[Socket] ${socket.user.id} disconnected`);
     });
 
-    // Each user joins their personal room for notifications
+    // Each user joins their personal notification room
     socket.join(`user:${socket.user.id}`);
   });
 

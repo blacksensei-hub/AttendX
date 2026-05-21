@@ -1,365 +1,342 @@
-// server/src/controllers/adminAtRiskController.js
-//
-// Computes at-risk students across every class and lets the admin
-// trigger one-click email notifications to either the student or
-// their lecturer. All heavy lifting happens in this single file so
-// the existing adminController.js stays untouched.
+// server/src/services/emailService.js
+const nodemailer = require('nodemailer');
 
-const { Op } = require('sequelize');
-const {
-  User,
-  Class,
-  Enrollment,
-  Session,
-  Attendance,
-  Notification,
-} = require('../models');
-const { success, error } = require('../utils/apiResponse');
-const emailService = require('../services/emailService');
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
-// ─── Tunables ────────────────────────────────────────────────
-// "Approaching" is the early-warning band immediately above the
-// class threshold. Sit inside this band and you're on the watch
-// list before you actually drop below the line.
-const APPROACHING_BAND      = 5;   // percentage points above threshold
-const MIN_SESSIONS_FOR_EVAL = 3;   // need at least N closed sessions before % is meaningful
-const DROPOUT_CONSECUTIVE   = 2;   // missed this many in a row → "recent dropout"
-
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/at-risk
-// Returns three buckets: belowThreshold, approaching, recentDropouts.
-// Open sessions are deliberately excluded — a session still in
-// progress would unfairly mark students as absent.
-// ─────────────────────────────────────────────────────────────
-exports.getAtRisk = async (req, res) => {
-  try {
-    // Pull the four datasets we need in parallel — this whole
-    // computation runs in 4 queries no matter how many students.
-    const [classes, closedSessions, enrollments] = await Promise.all([
-      Class.findAll({
-        include: [{
-          model:      User,
-          as:         'lecturer',
-          attributes: ['id', 'full_name', 'email'],
-        }],
-      }),
-      Session.findAll({
-        where:      { status: 'closed' },
-        attributes: ['id', 'class_id', 'created_at'],
-        order:      [['created_at', 'DESC']],
-      }),
-      Enrollment.findAll({
-        include: [{
-          model:      User,
-          as:         'student',
-          attributes: ['id', 'full_name', 'email', 'student_id', 'is_active'],
-        }],
-      }),
-    ]);
-
-    // Short-circuit: no closed sessions means nothing to evaluate.
-    if (closedSessions.length === 0) {
-      return success(res, {
-        belowThreshold:  [],
-        approaching:     [],
-        recentDropouts:  [],
-        summary: { totalAtRisk: 0, belowCount: 0, approachingCount: 0, dropoutCount: 0 },
-      });
-    }
-
-    // One query for every relevant attendance row.
-    const allAttendance = await Attendance.findAll({
-      where: {
-        session_id: { [Op.in]: closedSessions.map(s => s.id) },
-        status:     { [Op.in]: ['present', 'late'] },
-      },
-      attributes: ['student_id', 'session_id'],
-    });
-
-    // Lookup map: studentId → Set<sessionId> they actually attended.
-    const attendedByStudent = new Map();
-    for (const a of allAttendance) {
-      if (!attendedByStudent.has(a.student_id)) {
-        attendedByStudent.set(a.student_id, new Set());
-      }
-      attendedByStudent.get(a.student_id).add(a.session_id);
-    }
-
-    // Group sessions by class (DESC order preserved).
-    const sessionsByClass = new Map();
-    for (const s of closedSessions) {
-      if (!sessionsByClass.has(s.class_id)) sessionsByClass.set(s.class_id, []);
-      sessionsByClass.get(s.class_id).push(s);
-    }
-
-    // Group enrollments by class.
-    const enrollmentsByClass = new Map();
-    for (const e of enrollments) {
-      if (!enrollmentsByClass.has(e.class_id)) enrollmentsByClass.set(e.class_id, []);
-      enrollmentsByClass.get(e.class_id).push(e);
-    }
-
-    const belowThreshold  = [];
-    const approaching     = [];
-    const recentDropouts  = [];
-
-    // Walk every (class, student) pair and bucket where appropriate.
-    for (const cls of classes) {
-      const classSessions    = sessionsByClass.get(cls.id)    || [];
-      const classEnrollments = enrollmentsByClass.get(cls.id) || [];
-
-      if (classSessions.length === 0) continue;
-
-      const threshold     = Number(cls.attendance_threshold) || 75;
-      const totalSessions = classSessions.length;
-      const className     = cls.name || cls.title || `Class ${cls.id}`;
-
-      for (const enr of classEnrollments) {
-        if (!enr.student || !enr.student.is_active) continue;
-
-        const attendedSet  = attendedByStudent.get(enr.student.id) || new Set();
-        const attendedCount = classSessions.filter(s => attendedSet.has(s.id)).length;
-        const percentage    = Math.round((attendedCount / totalSessions) * 1000) / 10;
-
-        const studentInfo = {
-          studentId:     enr.student.id,
-          studentName:   enr.student.full_name,
-          studentEmail:  enr.student.email,
-          studentNumber: enr.student.student_id,
-          classId:       cls.id,
-          className,
-          classCode:     cls.code,
-          lecturerId:    cls.lecturer?.id,
-          lecturerName:  cls.lecturer?.full_name,
-          lecturerEmail: cls.lecturer?.email,
-          attendedCount,
-          totalSessions,
-          percentage,
-          threshold,
-        };
-
-        // Percentage-based buckets only fire after MIN_SESSIONS_FOR_EVAL.
-        // Below that we don't have enough data to fairly judge anyone.
-        if (totalSessions >= MIN_SESSIONS_FOR_EVAL) {
-          if (percentage < threshold) {
-            belowThreshold.push(studentInfo);
-          } else if (percentage < threshold + APPROACHING_BAND) {
-            approaching.push(studentInfo);
-          }
-        }
-
-        // Dropout check is independent — even with just 2 sessions
-        // missing both consecutively is meaningful.
-        if (totalSessions >= DROPOUT_CONSECUTIVE) {
-          let consecutiveMissed = 0;
-          for (const s of classSessions) {           // already DESC by created_at
-            if (!attendedSet.has(s.id)) consecutiveMissed++;
-            else break;
-          }
-          if (consecutiveMissed >= DROPOUT_CONSECUTIVE) {
-            recentDropouts.push({
-              ...studentInfo,
-              consecutiveMissed,
-              lastMissedDate: classSessions[0].created_at,
-            });
-          }
-        }
-      }
-    }
-
-    // Sort: most concerning at the top of each list.
-    belowThreshold.sort((a, b) => a.percentage - b.percentage);
-    approaching.sort((a, b)    => a.percentage - b.percentage);
-    recentDropouts.sort((a, b) => b.consecutiveMissed - a.consecutiveMissed);
-
-    return success(res, {
-      belowThreshold,
-      approaching,
-      recentDropouts,
-      summary: {
-        totalAtRisk:      belowThreshold.length + approaching.length,
-        belowCount:       belowThreshold.length,
-        approachingCount: approaching.length,
-        dropoutCount:     recentDropouts.length,
-      },
-    });
-  } catch (err) {
-    console.error('[AtRisk] getAtRisk failed:', err);
-    return error(res, 'Failed to compute at-risk students', 500);
-  }
-};
-
-// ─────────────────────────────────────────────────────────────
-// Helper: pull a fresh snapshot of one (student, class) pair
-// before we send a notification. We never trust stale data from
-// the request — we always recompute the percentage at send time.
-// ─────────────────────────────────────────────────────────────
-async function hydrate(userId, classId) {
-  const [student, klass] = await Promise.all([
-    User.findByPk(userId),
-    Class.findByPk(classId, {
-      include: [{ model: User, as: 'lecturer' }],
-    }),
-  ]);
-
-  if (!student || student.role !== 'student') {
-    const e = new Error('Student not found');
-    e.statusCode = 404;
-    throw e;
-  }
-  if (!klass) {
-    const e = new Error('Class not found');
-    e.statusCode = 404;
-    throw e;
-  }
-
-  // Confirm the student is actually enrolled — reject phantom calls.
-  const enrollment = await Enrollment.findOne({
-    where: { student_id: userId, class_id: classId },
-  });
-  if (!enrollment) {
-    const e = new Error('Student is not enrolled in this class');
-    e.statusCode = 400;
-    throw e;
-  }
-
-  // Recompute live attendance %.
-  const closedSessions = await Session.findAll({
-    where:      { class_id: classId, status: 'closed' },
-    attributes: ['id'],
-  });
-  const sessionIds = closedSessions.map(s => s.id);
-
-  let attendedCount = 0;
-  if (sessionIds.length > 0) {
-    const records = await Attendance.findAll({
-      where: {
-        student_id: userId,
-        session_id: { [Op.in]: sessionIds },
-        status:     { [Op.in]: ['present', 'late'] },
-      },
-      attributes: ['session_id'],
-    });
-    attendedCount = new Set(records.map(r => r.session_id)).size;
-  }
-
-  const total      = closedSessions.length;
-  const percentage = total > 0 ? Math.round((attendedCount / total) * 1000) / 10 : 0;
-  const threshold  = Number(klass.attendance_threshold) || 75;
-  const className  = klass.name || klass.title || `Class ${klass.id}`;
-
-  return { student, klass, className, attendedCount, total, percentage, threshold };
+// ─── Base HTML template ───────────────────────────────────────
+function buildEmailHTML(title, bodyHTML) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width">
+    </head>
+    <body style="margin:0;padding:0;background:#f4f6fb;
+                 font-family:'Segoe UI',Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0"
+             style="background:#f4f6fb;padding:40px 20px;">
+        <tr>
+          <td align="center">
+            <table width="100%" cellpadding="0" cellspacing="0"
+                   style="max-width:560px;background:#ffffff;border-radius:16px;
+                          overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+              <tr>
+                <td style="background:#2563eb;padding:28px 32px;">
+                  <table cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="background:rgba(255,255,255,0.2);border-radius:10px;
+                                  width:36px;height:36px;text-align:center;
+                                  vertical-align:middle;font-size:18px;
+                                  font-weight:700;color:#ffffff;padding:0 10px;">
+                        A
+                      </td>
+                      <td style="padding-left:12px;color:#ffffff;
+                                  font-size:18px;font-weight:600;">
+                        AttendX
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:32px;">
+                  <h2 style="margin:0 0 16px;color:#0f172a;
+                              font-size:20px;font-weight:700;">
+                    ${title}
+                  </h2>
+                  ${bodyHTML}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:20px 32px;border-top:1px solid #f0f2f8;">
+                  <p style="margin:0;color:#94a3b8;font-size:12px;">
+                    This email was sent by AttendX. If you did not expect it,
+                    you can safely ignore it.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
 }
 
-// ─────────────────────────────────────────────────────────────
-// POST /api/admin/at-risk/notify-student/:userId/:classId
-// Email + in-app nudge to the student.
-// ─────────────────────────────────────────────────────────────
-exports.notifyStudent = async (req, res) => {
+// ─── Core send helper ─────────────────────────────────────────
+async function sendMail({ to, subject, html }) {
   try {
-    const { userId, classId } = req.params;
-    const ctx = await hydrate(userId, classId);
-
-    // Fire-and-forget — never block the response on SMTP latency.
-    emailService.sendAtRiskStudentEmail({
-      to:            ctx.student.email,
-      studentName:   ctx.student.full_name,
-      className:     ctx.className,
-      percentage:    ctx.percentage,
-      threshold:     ctx.threshold,
-      attendedCount: ctx.attendedCount,
-      totalSessions: ctx.total,
-    }).catch(err =>
-      console.error('[AtRisk] sendAtRiskStudentEmail failed:', err.message)
-    );
-
-    // Best-effort in-app notification — failure here must NOT
-    // bubble up to the user-facing response.
-    try {
-      await Notification.create({
-        user_id: ctx.student.id,
-        type:    'at_risk',
-        title:   'Attendance below threshold',
-        message: `Your attendance for ${ctx.className} is at ${ctx.percentage}% `
-               + `(threshold ${ctx.threshold}%). Please attend upcoming sessions.`,
-        is_read: false,
-      });
-    } catch (e) {
-      console.error('[AtRisk] notification skipped:', e.message);
-    }
-
-    return success(res, {
-      notified: 'student',
-      email:    ctx.student.email,
-      snapshot: {
-        percentage:    ctx.percentage,
-        threshold:     ctx.threshold,
-        attendedCount: ctx.attendedCount,
-        totalSessions: ctx.total,
-      },
-    });
+    await transporter.sendMail({ from: process.env.EMAIL_FROM, to, subject, html });
+    console.log(`[Email] Sent "${subject}" to ${to}`);
   } catch (err) {
-    console.error('[AtRisk] notifyStudent failed:', err);
-    return error(res, err.message || 'Failed to notify student', err.statusCode || 400);
+    console.error(`[Email] Failed to send to ${to}:`, err.message);
   }
-};
+}
 
-// ─────────────────────────────────────────────────────────────
-// POST /api/admin/at-risk/notify-lecturer/:userId/:classId
-// Email + in-app nudge to the lecturer of the at-risk class.
-// (No real "academic advisor" field on User yet, so v1 routes
-// the alert to the class lecturer who already knows the student.)
-// ─────────────────────────────────────────────────────────────
-exports.notifyLecturer = async (req, res) => {
-  try {
-    const { userId, classId } = req.params;
-    const ctx = await hydrate(userId, classId);
+// ─── 1. Session opened ────────────────────────────────────────
+async function sendSessionOpenedEmail({ to, studentName, className, sessionTitle }) {
+  const title = 'Attendance session is now open';
+  const body  = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${studentName}</strong>,
+    </p>
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+      Your lecturer has opened an attendance session for
+      <strong style="color:#2563eb;">${className}</strong>
+      ${sessionTitle ? `— <em>${sessionTitle}</em>` : ''}.
+      Mark your attendance now before the session closes.
+    </p>
+    <a href="${process.env.CLIENT_URL}/student"
+       style="display:inline-block;background:#2563eb;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;
+              font-weight:600;font-size:14px;">
+      Mark attendance →
+    </a>
+    <p style="color:#94a3b8;font-size:13px;margin-top:20px;">
+      You must be physically present in the classroom to mark attendance.
+      The QR code rotates every few seconds — scan it quickly.
+    </p>
+  `;
+  await sendMail({ to, subject: `📍 Attendance open — ${className}`, html: buildEmailHTML(title, body) });
+}
 
-    if (!ctx.klass.lecturer || !ctx.klass.lecturer.email) {
-      return error(res, 'This class has no assigned lecturer', 400);
-    }
+// ─── 2. Attendance confirmed ──────────────────────────────────
+async function sendAttendanceConfirmedEmail({ to, studentName, className, status, markedAt }) {
+  const title = 'Attendance confirmed';
+  const formattedTime = new Date(markedAt).toLocaleString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long',
+    year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const statusColor = status === 'present' ? '#10b981' : '#f59e0b';
+  const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+  const body = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${studentName}</strong>,
+    </p>
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+      Your attendance for <strong style="color:#2563eb;">${className}</strong> has been recorded.
+    </p>
+    <table cellpadding="0" cellspacing="0"
+           style="background:#f8faff;border-radius:10px;padding:16px 20px;margin-bottom:20px;width:100%;">
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Status</td>
+        <td style="text-align:right;">
+          <span style="background:${statusColor}18;color:${statusColor};padding:3px 12px;border-radius:99px;font-size:13px;font-weight:700;">
+            ${statusLabel}
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Class</td>
+        <td style="color:#0f172a;font-size:13px;font-weight:500;text-align:right;">${className}</td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Marked at</td>
+        <td style="color:#0f172a;font-size:13px;text-align:right;">${formattedTime}</td>
+      </tr>
+    </table>
+    <p style="color:#94a3b8;font-size:13px;margin:0;">Keep this email as your attendance receipt.</p>
+  `;
+  await sendMail({ to, subject: `✅ Attendance recorded — ${className}`, html: buildEmailHTML(title, body) });
+}
 
-    emailService.sendAtRiskLecturerEmail({
-      to:            ctx.klass.lecturer.email,
-      lecturerName:  ctx.klass.lecturer.full_name,
-      studentName:   ctx.student.full_name,
-      studentNumber: ctx.student.student_id,
-      studentEmail:  ctx.student.email,
-      className:     ctx.className,
-      percentage:    ctx.percentage,
-      threshold:     ctx.threshold,
-      attendedCount: ctx.attendedCount,
-      totalSessions: ctx.total,
-    }).catch(err =>
-      console.error('[AtRisk] sendAtRiskLecturerEmail failed:', err.message)
-    );
+// ─── 3. Session closing soon ──────────────────────────────────
+async function sendSessionClosingSoonEmail({ to, studentName, className }) {
+  const title = 'Session closing in 2 minutes';
+  const body  = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${studentName}</strong>,
+    </p>
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+      The attendance session for <strong style="color:#2563eb;">${className}</strong>
+      is closing in approximately <strong style="color:#ef4444;">2 minutes</strong>.
+    </p>
+    <a href="${process.env.CLIENT_URL}/student"
+       style="display:inline-block;background:#ef4444;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;
+              font-weight:600;font-size:14px;">
+      Mark attendance now →
+    </a>
+  `;
+  await sendMail({ to, subject: `🚨 Last chance — ${className} closes in 2 minutes`, html: buildEmailHTML(title, body) });
+}
 
-    try {
-      await Notification.create({
-        user_id: ctx.klass.lecturer.id,
-        type:    'at_risk_alert',
-        title:   `Student at risk in ${ctx.className}`,
-        message: `${ctx.student.full_name}`
-               + (ctx.student.student_id ? ` (${ctx.student.student_id})` : '')
-               + ` is at ${ctx.percentage}% attendance — below the ${ctx.threshold}% threshold.`,
-        is_read: false,
-      });
-    } catch (e) {
-      console.error('[AtRisk] notification skipped:', e.message);
-    }
+// ─── 4. Session closed summary ────────────────────────────────
+async function sendSessionClosedEmails({ className, sessionTitle, closedAt, records }) {
+  const formattedTime = new Date(closedAt).toLocaleString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long',
+    year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  await Promise.allSettled(
+    records.map(record => {
+      const statusColor = { present: '#10b981', late: '#f59e0b', absent: '#ef4444' }[record.status] ?? '#6b7280';
+      const statusLabel = record.status ? record.status.charAt(0).toUpperCase() + record.status.slice(1) : 'Absent';
+      const title = `Session closed — ${className}`;
+      const body = `
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+          Hi <strong>${record.studentName}</strong>,
+        </p>
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+          The attendance session for <strong style="color:#2563eb;">${className}</strong>
+          ${sessionTitle ? `(${sessionTitle})` : ''} has now been closed.
+        </p>
+        <table cellpadding="0" cellspacing="0"
+               style="background:#f8faff;border-radius:10px;padding:16px 20px;margin-bottom:20px;width:100%;">
+          <tr>
+            <td style="color:#64748b;font-size:13px;padding:6px 0;">Your attendance status</td>
+            <td style="text-align:right;">
+              <span style="background:${statusColor}18;color:${statusColor};padding:4px 14px;border-radius:99px;font-size:13px;font-weight:700;">
+                ${statusLabel}
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td style="color:#64748b;font-size:13px;padding:6px 0;">Class</td>
+            <td style="color:#0f172a;font-size:13px;font-weight:500;text-align:right;">${className}</td>
+          </tr>
+          <tr>
+            <td style="color:#64748b;font-size:13px;padding:6px 0;">Session closed at</td>
+            <td style="color:#0f172a;font-size:13px;text-align:right;">${formattedTime}</td>
+          </tr>
+        </table>
+        ${record.status === 'absent' ? `
+        <p style="color:#ef4444;font-size:13px;background:#fff5f5;border-left:3px solid #ef4444;
+                   padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:16px;">
+          You were marked absent. If you believe this is an error, please contact your lecturer.
+        </p>` : ''}
+        <p style="color:#94a3b8;font-size:13px;margin:0;">Keep this email as your attendance record.</p>
+      `;
+      return sendMail({ to: record.studentEmail, subject: `📋 Session closed — ${className} (${statusLabel})`, html: buildEmailHTML(title, body) });
+    })
+  );
+}
 
-    return success(res, {
-      notified: 'lecturer',
-      email:    ctx.klass.lecturer.email,
-      snapshot: {
-        percentage:    ctx.percentage,
-        threshold:     ctx.threshold,
-        attendedCount: ctx.attendedCount,
-        totalSessions: ctx.total,
-      },
-    });
-  } catch (err) {
-    console.error('[AtRisk] notifyLecturer failed:', err);
-    return error(res, err.message || 'Failed to notify lecturer', err.statusCode || 400);
-  }
+// ─── 5. At-risk: student ──────────────────────────────────────
+async function sendAtRiskStudentEmail({ to, studentName, className, percentage, threshold, attendedCount, totalSessions }) {
+  const title = 'Your attendance needs attention';
+  const body = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${studentName}</strong>,
+    </p>
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+      Your attendance for <strong style="color:#2563eb;">${className}</strong>
+      has fallen below the required threshold.
+    </p>
+    <table cellpadding="0" cellspacing="0"
+           style="background:#fffaf0;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:20px;width:100%;">
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Your attendance</td>
+        <td style="text-align:right;">
+          <span style="background:#f59e0b18;color:#b45309;padding:4px 14px;border-radius:99px;font-size:14px;font-weight:700;">
+            ${percentage}%
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Required threshold</td>
+        <td style="color:#0f172a;font-size:13px;font-weight:600;text-align:right;">${threshold}%</td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Sessions attended</td>
+        <td style="color:#0f172a;font-size:13px;text-align:right;">${attendedCount} of ${totalSessions}</td>
+      </tr>
+    </table>
+    <a href="${process.env.CLIENT_URL}/student"
+       style="display:inline-block;background:#2563eb;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;
+              font-weight:600;font-size:14px;">
+      View my attendance →
+    </a>
+  `;
+  await sendMail({ to, subject: `⚠️ Attendance alert — ${className}`, html: buildEmailHTML(title, body) });
+}
+
+// ─── 6. At-risk: lecturer ─────────────────────────────────────
+async function sendAtRiskLecturerEmail({ to, lecturerName, studentName, studentNumber, studentEmail, className, percentage, threshold, attendedCount, totalSessions }) {
+  const title = 'Student at risk — intervention requested';
+  const body = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${lecturerName}</strong>,
+    </p>
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+      A student in <strong style="color:#2563eb;">${className}</strong> has dropped below the attendance threshold.
+    </p>
+    <table cellpadding="0" cellspacing="0"
+           style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px 20px;margin-bottom:20px;width:100%;">
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Student</td>
+        <td style="color:#0f172a;font-size:13px;font-weight:600;text-align:right;">${studentName}</td>
+      </tr>
+      ${studentNumber ? `<tr><td style="color:#64748b;font-size:13px;padding:6px 0;">Student ID</td><td style="color:#0f172a;font-size:13px;font-family:monospace;text-align:right;">${studentNumber}</td></tr>` : ''}
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Email</td>
+        <td style="text-align:right;"><a href="mailto:${studentEmail}" style="color:#2563eb;font-size:13px;text-decoration:none;">${studentEmail}</a></td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Attendance</td>
+        <td style="text-align:right;">
+          <span style="background:#ef444418;color:#b91c1c;padding:4px 14px;border-radius:99px;font-size:13px;font-weight:700;">
+            ${percentage}% (${attendedCount}/${totalSessions})
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:13px;padding:6px 0;">Threshold</td>
+        <td style="color:#0f172a;font-size:13px;text-align:right;">${threshold}%</td>
+      </tr>
+    </table>
+    <a href="${process.env.CLIENT_URL}/lecturer"
+       style="display:inline-block;background:#2563eb;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;
+              font-weight:600;font-size:14px;">
+      Open lecturer dashboard →
+    </a>
+  `;
+  await sendMail({ to, subject: `🚩 At-risk student — ${studentName} (${className})`, html: buildEmailHTML(title, body) });
+}
+
+// ─── 7. Announcement broadcast ────────────────────────────────
+async function sendAnnouncementEmail({ to, name, title, message, senderName }) {
+  const emailTitle = title;
+  const body = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${name}</strong>,
+    </p>
+    <p style="color:#374151;font-size:13px;margin:0 0 20px;color:#6b7280;">
+      Message from <strong>${senderName}</strong> via AttendX
+    </p>
+    <div style="background:#f8faff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;
+                padding:16px 20px;margin-bottom:20px;color:#374151;font-size:15px;line-height:1.7;">
+      ${message.replace(/\n/g, '<br/>')}
+    </div>
+    <a href="${process.env.CLIENT_URL}"
+       style="display:inline-block;background:#7c3aed;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;
+              font-weight:600;font-size:14px;">
+      Open AttendX →
+    </a>
+    <p style="color:#94a3b8;font-size:13px;margin-top:20px;">
+      You received this because you are registered on AttendX.
+    </p>
+  `;
+  await sendMail({ to, subject: `📢 ${title}`, html: buildEmailHTML(emailTitle, body) });
+}
+
+// ─── Exports ──────────────────────────────────────────────────
+module.exports = {
+  sendSessionOpenedEmail,
+  sendAttendanceConfirmedEmail,
+  sendSessionClosingSoonEmail,
+  sendSessionClosedEmails,
+  sendAtRiskStudentEmail,
+  sendAtRiskLecturerEmail,
+  sendAnnouncementEmail,
 };

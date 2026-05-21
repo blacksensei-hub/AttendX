@@ -1,2 +1,20 @@
-node_modules
+# Dependencies
+node_modules/
+.expo/
+
+# Environment files — NEVER commit these
 .env
+.env.local
+.env.*.local
+
+# Build output
+client/dist/
+mobile/.expo/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

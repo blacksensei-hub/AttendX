@@ -1,3 +1,4 @@
+// mobile/app/student/scan.jsx
 import { useState, useEffect, useRef }            from 'react';
 import {
   View, Text, StyleSheet, Vibration,
@@ -25,36 +26,34 @@ import {
   SPRING, EASE, DURATION, TAP,
 }                                                 from '../../src/lib/motion';
 
-/**
- * ═════════════════════════════════════════════════════════════════
- * ScanScreen — student-side QR scanner.
- *
- * Three states:
- *   1. No camera permission → themed prompt screen
- *   2. Scanning             → camera viewfinder with branded chrome
- *   3. Result (success/err) → overlay card with the outcome
- *
- * The viewfinder UI stays dark regardless of theme — bright
- * surfaces wash out a camera preview and ruin contrast for the
- * scan reticle. Only the permission screen and result feedback
- * respect theme tokens.
- *
- * Flow:
- *   • Camera scans QR → fires handleScan
- *   • Acquires GPS    → optional, sends lat/lng + isMockGps to backend
- *   • POST /attendance/mark with { sessionId, qrToken, location }
- *   • Show result card → on success, redirect after 2.5s
- * ═════════════════════════════════════════════════════════════════
- */
 export default function ScanScreen() {
   const t = useTheme();
   const { sessionId } = useLocalSearchParams();
   const [permission, requestPermission] = useCameraPermissions();
 
-  const [processing, setProcessing] = useState(false);
-  const [result,     setResult]     = useState(null);  // 'success' | 'error'
-  const [message,    setMessage]    = useState('');
+  const [processing,   setProcessing]   = useState(false);
+  const [result,       setResult]       = useState(null);   // 'success' | 'error'
+  const [message,      setMessage]      = useState('');
+  const [hasGeofence,  setHasGeofence]  = useState(false);  // true only when geo coords exist
   const hasScanned = useRef(false);
+
+  // ── Pre-fetch session to check geofence status ───────────────
+  // We need to know BEFORE scanning whether to request GPS.
+  // If we request GPS unnecessarily, it takes 3-4 seconds and the
+  // QR token rotates in that time, causing "Session not found".
+  useEffect(() => {
+    if (!sessionId) return;
+    api.get(`/sessions/${sessionId}`)
+      .then(res => {
+        const session = res.data?.data?.session ?? res.data?.session ?? {};
+        const geo = session.geo_lat && session.geo_lng && session.geo_radius;
+        setHasGeofence(Boolean(geo));
+      })
+      .catch(() => {
+        // If we can't fetch session details, assume no geofence
+        setHasGeofence(false);
+      });
+  }, [sessionId]);
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
@@ -67,16 +66,21 @@ export default function ScanScreen() {
     Vibration.vibrate(100);
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
       let latitude = 0, longitude = 0, isMock = false;
 
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        latitude  = loc.coords.latitude;
-        longitude = loc.coords.longitude;
-        isMock    = loc.mocked ?? false;
+      // Only acquire GPS when the session actually has a geofence.
+      // Skipping this saves 3-4 seconds and prevents the QR token
+      // from expiring before the mark request reaches the server.
+      if (hasGeofence) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          latitude  = loc.coords.latitude;
+          longitude = loc.coords.longitude;
+          isMock    = loc.mocked ?? false;
+        }
       }
 
       const { data } = await api.post('/attendance/mark', {
@@ -86,13 +90,10 @@ export default function ScanScreen() {
       setResult('success');
       setMessage(data.message || 'Attendance marked');
       Vibration.vibrate([0, 100, 50, 100]);
-
-      setTimeout(() => router.replace('/student'), 2500);
+      setTimeout(() => router.replace({ pathname: '/student', params: { scanned: '1' } }), 2500);
     } catch (err) {
       setResult('error');
       setMessage(err.response?.data?.message || 'Failed to mark attendance');
-
-      // Reset for retry after 3s
       setTimeout(() => {
         hasScanned.current = false;
         setResult(null);
@@ -103,7 +104,7 @@ export default function ScanScreen() {
     }
   };
 
-  // ── No permission yet — themed prompt ────────────────────────
+  // ── No permission yet ─────────────────────────────────────────
   if (!permission?.granted) {
     return (
       <Screen scroll={false}>
@@ -149,7 +150,6 @@ export default function ScanScreen() {
     );
   }
 
-  // ── Camera + scanning UI (dark by design) ────────────────────
   return (
     <View style={s.container}>
       <CameraView
@@ -159,34 +159,29 @@ export default function ScanScreen() {
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
       />
 
-      {/* Dimming + framing overlay */}
       <View style={s.overlay}>
 
-        {/* ── Top bar ─────────────────────────────────────── */}
+        {/* Top bar */}
         <View style={s.topBar}>
           <CloseButton onPress={() => router.replace('/student')} />
-
           <View style={s.topCenter}>
             <Text style={s.topTitle}>Scan QR code</Text>
             <Text style={s.topSubtitle}>Hold steady</Text>
           </View>
-
           <View style={{ width: 40 }} />
         </View>
 
-        {/* ── Scan reticle ────────────────────────────────── */}
+        {/* Scan reticle */}
         <View style={s.frameWrap}>
           <ScanReticle scanning={!processing && !result} />
         </View>
 
-        {/* ── Bottom feedback area ─────────────────────────── */}
+        {/* Bottom feedback area */}
         <View style={s.bottom}>
-          {processing && <ProcessingCard />}
+          {processing && <ProcessingCard hasGeofence={hasGeofence} />}
           {result === 'success' && <SuccessCard message={message} />}
           {result === 'error'   && <ErrorCard message={message} />}
-          {!processing && !result && (
-            <Hint />
-          )}
+          {!processing && !result && <Hint />}
         </View>
       </View>
     </View>
@@ -213,7 +208,7 @@ function CloseButton({ onPress }) {
   );
 }
 
-// ─── Scan reticle with animated corner pulse + sweeping line ──
+// ─── Scan reticle ──────────────────────────────────────────────
 function ScanReticle({ scanning }) {
   const sweepY = useSharedValue(0);
   const cornerOpacity = useSharedValue(1);
@@ -251,10 +246,7 @@ function ScanReticle({ scanning }) {
 
   return (
     <View style={s.frame}>
-      {/* Sweeping scan line — only during active scanning */}
       <Animated.View style={[s.sweep, sweepStyle]} />
-
-      {/* Four corner brackets — pulse softly while scanning */}
       <Animated.View style={[s.corner, s.tl, cornerStyle]} />
       <Animated.View style={[s.corner, s.tr, cornerStyle]} />
       <Animated.View style={[s.corner, s.bl, cornerStyle]} />
@@ -263,7 +255,7 @@ function ScanReticle({ scanning }) {
   );
 }
 
-// ─── Hint text + scanning indicator ────────────────────────────
+// ─── Hint ──────────────────────────────────────────────────────
 function Hint() {
   return (
     <Animated.View entering={FadeIn.duration(DURATION.slow)}>
@@ -277,8 +269,10 @@ function Hint() {
   );
 }
 
-// ─── Processing card (spinner + label) ─────────────────────────
-function ProcessingCard() {
+// ─── Processing card ───────────────────────────────────────────
+// Shows "Verifying location" only when geofence is active;
+// shows "Marking attendance" when no geofence is needed.
+function ProcessingCard({ hasGeofence }) {
   const rotation = useSharedValue(0);
 
   useEffect(() => {
@@ -301,11 +295,15 @@ function ProcessingCard() {
       <Animated.View style={spinStyle}>
         <Loader2 size={24} color="#fff" strokeWidth={2.4} />
       </Animated.View>
-      <Text style={s.resultText}>Verifying location…</Text>
-      <View style={s.resultSubRow}>
-        <MapPin size={11} color="rgba(255,255,255,0.6)" />
-        <Text style={s.resultSub}>Checking you're inside the geofence</Text>
-      </View>
+      <Text style={s.resultText}>
+        {hasGeofence ? 'Verifying location…' : 'Marking attendance…'}
+      </Text>
+      {hasGeofence && (
+        <View style={s.resultSubRow}>
+          <MapPin size={11} color="rgba(255,255,255,0.6)" />
+          <Text style={s.resultSub}>Checking you're inside the geofence</Text>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -368,20 +366,15 @@ function ErrorCard({ message }) {
   );
 }
 
-// ─── Camera UI styles (intentionally NOT theme-aware) ─────────
-//
-// The scan camera uses a dark UI regardless of app theme. Bright
-// surfaces wash out the camera preview and reduce contrast on the
-// reticle. Apple's Code Scanner, Google Lens, and every QR app I
-// can think of use the same convention.
-const FRAME_SIZE = 240;
-const CORNER_LEN = 32;
-const CORNER_W   = 4;
+// ─── Styles ────────────────────────────────────────────────────
+const FRAME_SIZE  = 240;
+const CORNER_LEN  = 32;
+const CORNER_W    = 4;
 const BRAND_COLOR = '#3b82f6';
 
 const s = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: '#000' },
-  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  container: { flex: 1, backgroundColor: '#000' },
+  overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
 
   topBar: {
     flexDirection:  'row',
@@ -400,111 +393,53 @@ const s = StyleSheet.create({
     alignItems:      'center',
     justifyContent:  'center',
   },
-  topCenter: { alignItems: 'center', gap: 2 },
-  topTitle: {
-    color:      '#fff',
-    fontWeight: '700',
-    fontSize:   15,
-    letterSpacing: 0.2,
-  },
+  topCenter:   { alignItems: 'center', gap: 2 },
+  topTitle:    { color: '#fff', fontWeight: '700', fontSize: 15, letterSpacing: 0.2 },
   topSubtitle: {
-    color:      'rgba(255,255,255,0.55)',
-    fontSize:   10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
+    color: 'rgba(255,255,255,0.55)', fontSize: 10,
+    fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1.2,
   },
 
-  frameWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  frame:      {
-    width: FRAME_SIZE,
-    height: FRAME_SIZE,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  corner: {
-    position:    'absolute',
-    width:       CORNER_LEN,
-    height:      CORNER_LEN,
-    borderColor: BRAND_COLOR,
-  },
+  frameWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  frame:     { width: FRAME_SIZE, height: FRAME_SIZE, position: 'relative', overflow: 'hidden' },
+
+  corner:    { position: 'absolute', width: CORNER_LEN, height: CORNER_LEN, borderColor: BRAND_COLOR },
   tl: { top: 0,    left: 0,  borderTopWidth: CORNER_W,    borderLeftWidth: CORNER_W  },
   tr: { top: 0,    right: 0, borderTopWidth: CORNER_W,    borderRightWidth: CORNER_W },
   bl: { bottom: 0, left: 0,  borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W  },
   br: { bottom: 0, right: 0, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W },
 
-  // The animated horizontal sweep line
   sweep: {
-    position:        'absolute',
-    left:            0,
-    right:           0,
-    top:             0,
-    height:          2,
+    position: 'absolute', left: 0, right: 0, top: 0, height: 2,
     backgroundColor: BRAND_COLOR,
-    shadowColor:     BRAND_COLOR,
-    shadowOpacity:   0.9,
-    shadowOffset:    { width: 0, height: 0 },
-    shadowRadius:    8,
-    elevation:       6,
+    shadowColor: BRAND_COLOR, shadowOpacity: 0.9,
+    shadowOffset: { width: 0, height: 0 }, shadowRadius: 8, elevation: 6,
   },
 
   bottom: {
-    padding:       24,
-    paddingBottom: 64,
-    alignItems:    'center',
-    minHeight:     120,
-    justifyContent:'flex-end',
+    padding: 24, paddingBottom: 64,
+    alignItems: 'center', minHeight: 120, justifyContent: 'flex-end',
   },
 
   hintBox: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    gap:             10,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    borderWidth:     1,
-    borderColor:     'rgba(255,255,255,0.14)',
-    borderRadius:    14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    maxWidth:        320,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, maxWidth: 320,
   },
-  hintText: {
-    color:      'rgba(255,255,255,0.85)',
-    fontSize:   12,
-    flexShrink: 1,
-    lineHeight: 16,
-  },
+  hintText: { color: 'rgba(255,255,255,0.85)', fontSize: 12, flexShrink: 1, lineHeight: 16 },
 
   resultBox: {
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderRadius:    18,
-    paddingVertical:   20,
-    paddingHorizontal: 24,
-    alignItems:      'center',
-    gap:             10,
-    borderWidth:     1,
-    borderColor:     'rgba(255,255,255,0.12)',
-    minWidth:        260,
-    maxWidth:        320,
+    backgroundColor: 'rgba(0,0,0,0.85)', borderRadius: 18,
+    paddingVertical: 20, paddingHorizontal: 24,
+    alignItems: 'center', gap: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+    minWidth: 260, maxWidth: 320,
   },
   successBox: { borderColor: 'rgba(16,185,129,0.5)' },
   errorBox:   { borderColor: 'rgba(239,68,68,0.5)'  },
 
-  resultText: {
-    color:      '#fff',
-    fontSize:   15,
-    textAlign:  'center',
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  resultSub: {
-    color:    'rgba(255,255,255,0.55)',
-    fontSize: 11,
-    textAlign:'center',
-  },
-  resultSubRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           6,
-  },
+  resultText: { color: '#fff', fontSize: 15, textAlign: 'center', fontWeight: '600', lineHeight: 20 },
+  resultSub:  { color: 'rgba(255,255,255,0.55)', fontSize: 11, textAlign: 'center' },
+  resultSubRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });

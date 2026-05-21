@@ -6,6 +6,7 @@ import { motion, AnimatePresence }       from 'framer-motion';
 import {
   LayoutDashboard, Users, BookOpen, Radio,
   LogOut, Shield, AlertTriangle, Map, Menu, X,
+  Megaphone, ClipboardList, BarChart3,
 }                                        from 'lucide-react';
 import toast                             from 'react-hot-toast';
 
@@ -17,21 +18,27 @@ import { EASE, DURATION, SPRING, TAP }   from '../../lib/motion';
 const SIDEBAR_WIDTH = 240;
 
 const NAV = [
-  { label: 'Overview',   to: '/admin',          icon: LayoutDashboard },
-  { label: 'Users',      to: '/admin/users',    icon: Users           },
-  { label: 'Classes',    to: '/admin/classes',  icon: BookOpen        },
-  { label: 'Sessions',   to: '/admin/sessions', icon: Radio           },
-  { label: 'At-risk',    to: '/admin/at-risk',  icon: AlertTriangle   },
-  { label: 'Heatmap',    to: '/admin/heatmap',  icon: Map             },
+  { label: 'Overview',       to: '/admin',                icon: LayoutDashboard },
+  { label: 'Users',          to: '/admin/users',          icon: Users           },
+  { label: 'Classes',        to: '/admin/classes',        icon: BookOpen        },
+  { label: 'Sessions',       to: '/admin/sessions',       icon: Radio           },
+  { label: 'At-risk',        to: '/admin/at-risk',        icon: AlertTriangle   },
+  { label: 'Heatmap',        to: '/admin/heatmap',        icon: Map             },
+  { label: 'Announcements',  to: '/admin/announcements',  icon: Megaphone       },
+  { label: 'Audit log',      to: '/admin/audit',          icon: ClipboardList   },
+  { label: 'Analytics',      to: '/admin/analytics',      icon: BarChart3       },
 ];
 
 const TITLES = {
-  '/admin':          'Overview',
-  '/admin/users':    'User management',
-  '/admin/classes':  'Class management',
-  '/admin/sessions': 'Session management',
-  '/admin/at-risk':  'At-risk students',
-  '/admin/heatmap':  'Campus heatmap',
+  '/admin':                'Overview',
+  '/admin/users':          'User management',
+  '/admin/classes':        'Class management',
+  '/admin/sessions':       'Session management',
+  '/admin/at-risk':        'At-risk students',
+  '/admin/heatmap':        'Campus heatmap',
+  '/admin/announcements':  'Announcements',
+  '/admin/audit':          'Audit log',
+  '/admin/analytics':      'Analytics',
 };
 
 export default function AdminLayout() {
@@ -42,12 +49,10 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen]    = useState(false);
   const pageTitle                        = TITLES[location.pathname] || 'Admin';
 
-  // Close sidebar on route change (mobile)
   useEffect(() => {
     if (isMobile) setSidebarOpen(false);
   }, [location.pathname]);
 
-  // Escape key
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };
     document.addEventListener('keydown', handler);
@@ -60,7 +65,6 @@ export default function AdminLayout() {
     navigate('/login', { replace: true });
   };
 
-  // Sidebar content shared between mobile overlay and desktop
   const sidebarContent = (
     <>
       {/* Brand header */}
@@ -92,7 +96,6 @@ export default function AdminLayout() {
             }}>Admin panel</p>
           </div>
         </div>
-        {/* Close button on mobile */}
         {isMobile && (
           <motion.button
             whileTap={TAP.button}
@@ -172,7 +175,7 @@ export default function AdminLayout() {
       overflow: 'hidden', backgroundColor: 'var(--bg)',
     }}>
 
-      {/* ── Mobile: overlay sidebar ──────────────────────── */}
+      {/* Mobile overlay sidebar */}
       {isMobile ? (
         <>
           <AnimatePresence>
@@ -212,7 +215,7 @@ export default function AdminLayout() {
           </AnimatePresence>
         </>
       ) : (
-        /* ── Desktop: static sidebar ────────────────────── */
+        /* Desktop static sidebar */
         <motion.aside
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
@@ -229,7 +232,7 @@ export default function AdminLayout() {
         </motion.aside>
       )}
 
-      {/* ── Main content ─────────────────────────────────── */}
+      {/* Main content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
 
         {/* Topbar */}
@@ -245,7 +248,6 @@ export default function AdminLayout() {
           transition: `background-color ${DURATION.medium}ms ${EASE.state}`,
         }}>
 
-          {/* Hamburger — mobile only */}
           {isMobile && (
             <motion.button
               whileTap={TAP.button}
@@ -288,7 +290,6 @@ export default function AdminLayout() {
             )}
           </div>
 
-          {/* Admin mode badge */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: '6px',
             padding: '4px 10px 4px 4px',

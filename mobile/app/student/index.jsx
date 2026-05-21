@@ -1,11 +1,16 @@
+// mobile/app/student/index.jsx
 import { useState, useEffect, useCallback }        from 'react';
-import { View, Text }                              from 'react-native';
-import { router }                                  from 'expo-router';
-import Animated, { FadeInUp }                      from 'react-native-reanimated';
+import { View, Text, StyleSheet }                  from 'react-native';
+import { router, useLocalSearchParams }            from 'expo-router';
+import Animated, {
+  FadeInUp, FadeInDown, FadeOutUp,
+  useSharedValue, useAnimatedStyle,
+  withTiming, withSpring,
+}                                                  from 'react-native-reanimated';
 import {
   QrCode, BookOpen, Clock, TrendingUp,
-  Calendar, CheckCircle, Radio, ArrowRight,
-  Hand, Sparkles,
+  Calendar, CheckCircle, CheckCircle2,
+  Radio, ArrowRight, Hand, Sparkles,
 }                                                  from 'lucide-react-native';
 
 import { useAuthStore }                            from '../../store/authStore';
@@ -18,41 +23,40 @@ import Button                                      from '../../src/components/ui
 import IconTile                                    from '../../src/components/ui/IconTile';
 import StatusPill                                  from '../../src/components/ui/StatusPill';
 import EmptyState                                  from '../../src/components/ui/EmptyState';
-import { DURATION }                                from '../../src/lib/motion';
+import { DURATION, SPRING }                        from '../../src/lib/motion';
 
-/**
- * ═════════════════════════════════════════════════════════════════
- * StudentDashboard — the first thing a student sees after login.
- *
- * Hierarchy of importance (top to bottom):
- *   1. Personal greeting + active-session callout (if any)
- *   2. Empty state (only if student isn't enrolled in any classes)
- *   3. Four stat cards — attendance performance at a glance
- *   4. Quick actions — Scan / Classes / History
- *
- * Three parallel data fetches:
- *   GET /sessions/active         — live sessions the student can join
- *   GET /reports/student-stats   — attendance metrics for the cards
- *   GET /classes/enrolled        — used only to detect "zero classes"
- *                                  state for the empty state card
- * ═════════════════════════════════════════════════════════════════
- */
+const POLL_INTERVAL_MS = 30_000; // re-check active sessions every 30 s
+
 export default function StudentDashboard() {
-  const t    = useTheme();
-  const user = useAuthStore(s => s.user);
+  const t      = useTheme();
+  const user   = useAuthStore(s => s.user);
+  const params = useLocalSearchParams();
 
-  const [sessions,     setSessions]     = useState([]);
-  const [stats,        setStats]        = useState({});
-  const [enrolledCount, setEnrolledCount] = useState(null); // null = unknown
-  const [refreshing,   setRefreshing]   = useState(false);
-  const [loading,      setLoading]      = useState(true);
+  const [sessions,      setSessions]      = useState([]);
+  const [stats,         setStats]         = useState({});
+  const [enrolledCount, setEnrolledCount] = useState(null);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [loading,       setLoading]       = useState(true);
 
-  /* ── Data fetch ─────────────────────────────────────────
-   * Promise.allSettled instead of Promise.all so one slow or
-   * failing endpoint doesn't blank the whole dashboard. We treat
-   * each response independently and fall back to safe defaults
-   * for any that didn't resolve. */
-  const fetchData = useCallback(async () => {
+  // ── Post-scan success banner ─────────────────────────────────
+  // scan.jsx redirects with ?scanned=1 after a successful mark.
+  // We show a green banner for 10 seconds then auto-dismiss it.
+  const [showBanner, setShowBanner] = useState(false);
+
+  useEffect(() => {
+    if (params?.scanned === '1') {
+      setShowBanner(true);
+      const t = setTimeout(() => setShowBanner(false), 10_000);
+      return () => clearTimeout(t);
+    }
+  }, [params?.scanned]);
+
+  // ── Data fetch ───────────────────────────────────────────────
+  // Backend spreads data flat: { success, message, sessions: [...] }
+  // We try multiple paths defensively so any interceptor wrapping
+  // or future API change never silently breaks the dashboard.
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [sessRes, statsRes, classesRes] = await Promise.allSettled([
         api.get('/sessions/active'),
@@ -61,42 +65,73 @@ export default function StudentDashboard() {
       ]);
 
       if (sessRes.status === 'fulfilled') {
-        setSessions(sessRes.value.data?.sessions ?? []);
+        const d = sessRes.value.data;
+        // Try flat spread, then nested data wrapper, then array root
+        const raw = d?.sessions ?? d?.data?.sessions ?? (Array.isArray(d) ? d : []);
+        setSessions(Array.isArray(raw) ? raw : []);
+      } else {
+        console.warn('[Dashboard] sessions fetch failed:', sessRes.reason?.message);
+        setSessions([]);
       }
+
       if (statsRes.status === 'fulfilled') {
-        setStats(statsRes.value.data ?? {});
+        const d = statsRes.value.data;
+        // Stats fields may sit flat on root or nested under .data
+        const raw = (d?.onTimeRate !== undefined || d?.totalSessions !== undefined)
+          ? d
+          : (d?.data ?? d ?? {});
+        setStats(raw);
+      } else {
+        console.warn('[Dashboard] stats fetch failed:', statsRes.reason?.message);
       }
+
       if (classesRes.status === 'fulfilled') {
-        setEnrolledCount(classesRes.value.data?.classes?.length ?? 0);
+        const d = classesRes.value.data;
+        const raw = d?.classes ?? d?.data?.classes ?? (Array.isArray(d) ? d : null);
+        setEnrolledCount(Array.isArray(raw) ? raw.length : 0);
+      } else {
+        console.warn('[Dashboard] classes fetch failed:', classesRes.reason?.message);
       }
+
     } catch (err) {
-      console.error(err);
+      console.error('[Dashboard] fetchData error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
+  // Initial load
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Poll active sessions every 30 s ─────────────────────────
+  // This ensures the "Mark your attendance" card disappears
+  // automatically when the lecturer closes the session, without
+  // requiring the student to pull-to-refresh.
   useEffect(() => {
-    fetchData();
+    const id = setInterval(() => fetchData(true), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
   }, [fetchData]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchData(); };
 
-  const firstName     = user?.name?.split(' ')[0] || 'there';
-  // True only after we've confirmed enrolledCount is 0 (not just unknown)
-  const noClasses     = !loading && enrolledCount === 0;
+  const firstName = user?.name?.split(' ')[0] || 'there';
+  const noClasses = !loading && enrolledCount === 0;
 
   return (
-    <Screen
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      gap={t.spacing.md}
-    >
-      {/* ── Greeting header ─────────────────────────────── */}
+    <Screen refreshing={refreshing} onRefresh={onRefresh} gap={t.spacing.md}>
+
+      {/* ── Success banner (post-scan redirect) ─────────── */}
+      {showBanner && (
+        <Animated.View
+          entering={FadeInDown.duration(DURATION.base).springify()}
+          exiting={FadeOutUp.duration(DURATION.base)}
+        >
+          <SuccessBanner t={t} onDismiss={() => setShowBanner(false)} />
+        </Animated.View>
+      )}
+
+      {/* ── Greeting ────────────────────────────────────── */}
       <Animated.View entering={FadeInUp.duration(DURATION.slow)}>
         <GreetingHeader
           t={t}
@@ -106,17 +141,14 @@ export default function StudentDashboard() {
         />
       </Animated.View>
 
-      {/* ── Active-session callout ──────────────────────── */}
+      {/* ── Active-session callout (hidden when sessions=[]) */}
       {sessions.length > 0 && (
         <Animated.View entering={FadeInUp.delay(80).duration(DURATION.slow)}>
           <ActiveSessionsCard t={t} sessions={sessions} />
         </Animated.View>
       )}
 
-      {/* ── Empty state for unenrolled students ──────────
-          Shown only when we've confirmed the student has zero
-          enrolled classes. The CTA pushes them to the Classes
-          tab where the existing inline join form lives. */}
+      {/* ── Empty state ──────────────────────────────────── */}
       {noClasses && (
         <Animated.View entering={FadeInUp.delay(80).duration(DURATION.slow)}>
           <EmptyState
@@ -140,84 +172,94 @@ export default function StudentDashboard() {
       <Animated.View entering={FadeInUp.delay(240).duration(DURATION.slow)}>
         <QuickActions t={t} />
       </Animated.View>
+
     </Screen>
+  );
+}
+
+// ─── Success banner ────────────────────────────────────────────
+function SuccessBanner({ t, onDismiss }) {
+  return (
+    <View style={{
+      flexDirection:   'row',
+      alignItems:      'center',
+      gap:             t.spacing.sm,
+      backgroundColor: '#f0fdf4',
+      borderWidth:     1,
+      borderColor:     '#86efac',
+      borderRadius:    t.radius.molecular,
+      padding:         t.spacing.sm + 2,
+    }}>
+      <CheckCircle2 size={20} color="#16a34a" strokeWidth={2.2} />
+      <View style={{ flex: 1 }}>
+        <Text style={{
+          fontFamily: t.fontFamily.displayBold,
+          fontSize:   t.fontSize.sm,
+          color:      '#15803d',
+        }}>
+          Attendance recorded
+        </Text>
+        <Text style={{
+          fontFamily: t.fontFamily.body,
+          fontSize:   t.fontSize.xs,
+          color:      '#16a34a',
+          marginTop:  2,
+        }}>
+          Your attendance has been marked successfully.
+        </Text>
+      </View>
+      {/* Tap to dismiss early */}
+      <Text
+        onPress={onDismiss}
+        style={{
+          fontFamily: t.fontFamily.bodySemibold,
+          fontSize:   t.fontSize.xs,
+          color:      '#16a34a',
+          paddingHorizontal: 4,
+        }}
+      >
+        ✕
+      </Text>
+    </View>
   );
 }
 
 // ─── Greeting header ───────────────────────────────────────────
 function GreetingHeader({ t, firstName, sessions, loading }) {
   return (
-    <View style={{
-      flexDirection:  'row',
-      alignItems:     'flex-start',
-      justifyContent: 'space-between',
-      gap:            t.spacing.sm,
-    }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: t.spacing.sm }}>
       <View style={{ flex: 1, gap: 4 }}>
-        <View style={{
-          flexDirection: 'row',
-          alignItems:    'center',
-          gap:           t.spacing.xs + 2,
-        }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs + 2 }}>
           <Text
             numberOfLines={1}
             style={{
-              fontFamily:    t.fontFamily.displayBold,
-              fontSize:      t.fontSize.xxl,
-              color:         t.colors.textPrimary,
-              letterSpacing: t.letterSpacing.tight,
-              lineHeight:    t.fontSize.xxl * 1.1,
+              fontFamily: t.fontFamily.displayBold, fontSize: t.fontSize.xxl,
+              color: t.colors.textPrimary, letterSpacing: t.letterSpacing.tight,
+              lineHeight: t.fontSize.xxl * 1.1,
             }}
           >
             Hi, {firstName}
           </Text>
           <Hand size={22} color={t.colors.amber} strokeWidth={2.2} />
         </View>
-
         <SubGreeting t={t} sessions={sessions} loading={loading} />
       </View>
     </View>
   );
 }
 
-// ─── Sub-greeting: "No active sessions" / live pill ────────────
+// ─── Sub-greeting ──────────────────────────────────────────────
 function SubGreeting({ t, sessions, loading }) {
   if (loading) {
-    return (
-      <Text style={{
-        fontFamily: t.fontFamily.body,
-        fontSize:   t.fontSize.sm,
-        color:      t.colors.textMuted,
-      }}>
-        Loading…
-      </Text>
-    );
+    return <Text style={{ fontFamily: t.fontFamily.body, fontSize: t.fontSize.sm, color: t.colors.textMuted }}>Loading…</Text>;
   }
-
   if (sessions.length === 0) {
-    return (
-      <Text style={{
-        fontFamily: t.fontFamily.body,
-        fontSize:   t.fontSize.sm,
-        color:      t.colors.textMuted,
-      }}>
-        No active sessions
-      </Text>
-    );
+    return <Text style={{ fontFamily: t.fontFamily.body, fontSize: t.fontSize.sm, color: t.colors.textMuted }}>No active sessions</Text>;
   }
-
   return (
-    <View style={{
-      flexDirection: 'row',
-      alignItems:    'center',
-      gap:           6,
-    }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
       <StatusPill status="live" size="sm" />
-      <Text style={{
-        fontFamily: t.fontFamily.body,
-        fontSize:   t.fontSize.sm,
-        color:      t.colors.textSecondary,
-      }}>
+      <Text style={{ fontFamily: t.fontFamily.body, fontSize: t.fontSize.sm, color: t.colors.textSecondary }}>
         {sessions.length} active session{sessions.length > 1 ? 's' : ''}
       </Text>
     </View>
@@ -228,35 +270,17 @@ function SubGreeting({ t, sessions, loading }) {
 function ActiveSessionsCard({ t, sessions }) {
   return (
     <Card accent="green" accentIntensity="bold">
-      <View style={{
-        flexDirection: 'row',
-        alignItems:    'center',
-        gap:           t.spacing.sm,
-        marginBottom:  t.spacing.sm,
-      }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, marginBottom: t.spacing.sm }}>
         <IconTile icon={Radio} tone="green" size="md" />
         <View style={{ flex: 1 }}>
-          <Text style={{
-            fontFamily:    t.fontFamily.mono,
-            fontSize:      10,
-            fontWeight:    '700',
-            color:         t.colors.green,
-            textTransform: 'uppercase',
-            letterSpacing: 1,
-          }}>
+          <Text style={{ fontFamily: t.fontFamily.mono, fontSize: 10, fontWeight: '700', color: t.colors.green, textTransform: 'uppercase', letterSpacing: 1 }}>
             Live right now
           </Text>
-          <Text style={{
-            fontFamily: t.fontFamily.displayBold,
-            fontSize:   t.fontSize.md,
-            color:      t.colors.textPrimary,
-            marginTop:  2,
-          }}>
+          <Text style={{ fontFamily: t.fontFamily.displayBold, fontSize: t.fontSize.md, color: t.colors.textPrimary, marginTop: 2 }}>
             Mark your attendance
           </Text>
         </View>
       </View>
-
       <View style={{ gap: t.spacing.xs + 2 }}>
         {sessions.map(session => (
           <SessionRow key={session.id} t={t} session={session} />
@@ -266,54 +290,27 @@ function ActiveSessionsCard({ t, sessions }) {
   );
 }
 
-// ─── Single row inside ActiveSessionsCard ─────────────────────
+// ─── Session row ───────────────────────────────────────────────
 function SessionRow({ t, session }) {
-  const goToScan = () => {
-    router.push({
-      pathname: '/student/scan',
-      params:   { sessionId: session.id },
-    });
-  };
-
   return (
     <View style={{
-      flexDirection:   'row',
-      alignItems:      'center',
-      gap:             t.spacing.sm,
-      padding:         t.spacing.sm,
-      backgroundColor: t.colors.bgRaised,
-      borderRadius:    t.radius.atomic,
-      borderWidth:     1,
-      borderColor:     t.colors.border,
+      flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm,
+      padding: t.spacing.sm, backgroundColor: t.colors.bgRaised,
+      borderRadius: t.radius.atomic, borderWidth: 1, borderColor: t.colors.border,
     }}>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text
-          numberOfLines={1}
-          style={{
-            fontFamily: t.fontFamily.bodySemibold,
-            fontSize:   t.fontSize.sm,
-            color:      t.colors.textPrimary,
-          }}
-        >
+        <Text numberOfLines={1} style={{ fontFamily: t.fontFamily.bodySemibold, fontSize: t.fontSize.sm, color: t.colors.textPrimary }}>
           {session.className}
         </Text>
-        <Text
-          numberOfLines={1}
-          style={{
-            fontFamily: t.fontFamily.body,
-            fontSize:   t.fontSize.xs,
-            color:      t.colors.textMuted,
-          }}
-        >
+        <Text numberOfLines={1} style={{ fontFamily: t.fontFamily.body, fontSize: t.fontSize.xs, color: t.colors.textMuted }}>
           {session.title || 'Attendance session'}
         </Text>
       </View>
-
       <Button
         label="Mark"
         size="sm"
         iconRight={ArrowRight}
-        onPress={goToScan}
+        onPress={() => router.push({ pathname: '/student/scan', params: { sessionId: session.id } })}
       />
     </View>
   );
@@ -322,71 +319,32 @@ function SessionRow({ t, session }) {
 // ─── Stats grid ────────────────────────────────────────────────
 function StatsGrid({ t, stats, loading }) {
   const cards = [
-    {
-      label: 'On-time rate',
-      value: `${stats.onTimeRate ?? 0}%`,
-      tone:  'green',
-      icon:  CheckCircle,
-    },
-    {
-      label: 'Total sessions',
-      value: stats.totalSessions ?? 0,
-      tone:  'brand',
-      icon:  Calendar,
-    },
-    {
-      label: 'This month',
-      value: `${stats.thisMonth ?? 0}%`,
-      tone:  'amber',
-      icon:  TrendingUp,
-    },
-    {
-      label: 'Present',
-      value: stats.present ?? 0,
-      tone:  'violet',
-      icon:  Sparkles,
-    },
+    { label: 'On-time rate',    value: `${stats.onTimeRate   ?? 0}%`, tone: 'green',  icon: CheckCircle },
+    { label: 'Total sessions',  value:   stats.totalSessions ?? 0,    tone: 'brand',  icon: Calendar    },
+    { label: 'This month',      value: `${stats.thisMonth    ?? 0}%`, tone: 'amber',  icon: TrendingUp  },
+    { label: 'Present',         value:   stats.present       ?? 0,    tone: 'violet', icon: Sparkles    },
   ];
 
   return (
-    <View style={{
-      flexDirection: 'row',
-      flexWrap:      'wrap',
-      gap:           t.spacing.sm,
-    }}>
-      {cards.map(c => (
-        <StatCard key={c.label} t={t} {...c} loading={loading} />
-      ))}
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }}>
+      {cards.map(c => <StatCard key={c.label} t={t} {...c} loading={loading} />)}
     </View>
   );
 }
 
 function StatCard({ t, label, value, tone, icon, loading }) {
-  // tone-to-colour lookup for the value text
   const valueColor = tone === 'green'  ? t.colors.green
                    : tone === 'amber'  ? t.colors.amber
                    : tone === 'violet' ? t.colors.violet
                    :                     t.colors.brandText;
-
   return (
     <View style={{ flexBasis: '48%', flexGrow: 1 }}>
       <Card accent={tone} accentIntensity="subtle" elevation="sm">
         <IconTile icon={icon} tone={tone} size="sm" />
-        <Text style={{
-          fontFamily: t.fontFamily.displayBold,
-          fontSize:   t.fontSize.xxl,
-          color:      valueColor,
-          marginTop:  t.spacing.xs + 2,
-          lineHeight: t.fontSize.xxl * 1.05,
-        }}>
+        <Text style={{ fontFamily: t.fontFamily.displayBold, fontSize: t.fontSize.xxl, color: valueColor, marginTop: t.spacing.xs + 2, lineHeight: t.fontSize.xxl * 1.05 }}>
           {loading ? '—' : value}
         </Text>
-        <Text style={{
-          fontFamily: t.fontFamily.body,
-          fontSize:   t.fontSize.xs,
-          color:      t.colors.textMuted,
-          marginTop:  2,
-        }}>
+        <Text style={{ fontFamily: t.fontFamily.body, fontSize: t.fontSize.xs, color: t.colors.textMuted, marginTop: 2 }}>
           {label}
         </Text>
       </Card>
@@ -397,31 +355,17 @@ function StatCard({ t, label, value, tone, icon, loading }) {
 // ─── Quick actions ─────────────────────────────────────────────
 function QuickActions({ t }) {
   const actions = [
-    { label: 'Scan QR', icon: QrCode,   tone: 'brand',  route: '/student/scan'    },
-    { label: 'Classes', icon: BookOpen, tone: 'green',  route: '/student/classes' },
-    { label: 'History', icon: Clock,    tone: 'amber',  route: '/student/history' },
+    { label: 'Scan QR', icon: QrCode,   tone: 'brand', route: '/student/scan'    },
+    { label: 'Classes', icon: BookOpen, tone: 'green', route: '/student/classes' },
+    { label: 'History', icon: Clock,    tone: 'amber', route: '/student/history' },
   ];
-
   return (
     <View style={{ gap: t.spacing.sm }}>
-      <Text style={{
-        fontFamily:    t.fontFamily.mono,
-        fontSize:      10,
-        fontWeight:    '700',
-        color:         t.colors.textMuted,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-      }}>
+      <Text style={{ fontFamily: t.fontFamily.mono, fontSize: 10, fontWeight: '700', color: t.colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 }}>
         Quick actions
       </Text>
-
-      <View style={{
-        flexDirection: 'row',
-        gap:           t.spacing.sm,
-      }}>
-        {actions.map(a => (
-          <ActionCard key={a.label} t={t} {...a} />
-        ))}
+      <View style={{ flexDirection: 'row', gap: t.spacing.sm }}>
+        {actions.map(a => <ActionCard key={a.label} t={t} {...a} />)}
       </View>
     </View>
   );
@@ -430,22 +374,10 @@ function QuickActions({ t }) {
 function ActionCard({ t, label, icon, tone, route }) {
   return (
     <View style={{ flex: 1 }}>
-      <Card
-        onPress={() => router.push(route)}
-        elevation="sm"
-        padded={false}
-      >
-        <View style={{
-          padding:        t.spacing.md,
-          alignItems:     'center',
-          gap:            t.spacing.xs + 2,
-        }}>
+      <Card onPress={() => router.push(route)} elevation="sm" padded={false}>
+        <View style={{ padding: t.spacing.md, alignItems: 'center', gap: t.spacing.xs + 2 }}>
           <IconTile icon={icon} tone={tone} size="md" />
-          <Text style={{
-            fontFamily: t.fontFamily.bodySemibold,
-            fontSize:   t.fontSize.xs,
-            color:      t.colors.textPrimary,
-          }}>
+          <Text style={{ fontFamily: t.fontFamily.bodySemibold, fontSize: t.fontSize.xs, color: t.colors.textPrimary }}>
             {label}
           </Text>
         </View>

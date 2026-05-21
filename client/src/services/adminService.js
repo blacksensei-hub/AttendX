@@ -86,6 +86,17 @@ const getHeatmapData = async () => {
   return unwrap(data);
 };
 
+// ─── Announcements ───────────────────────────────────────────
+const previewAnnouncement = async (params = {}) => {
+  const { data } = await api.get('/admin/announcements/preview', { params });
+  return unwrap(data);
+};
+
+const sendAnnouncement = async (body = {}) => {
+  const { data } = await api.post('/admin/announcements', body);
+  return unwrap(data);
+};
+
 // ─── Named exports ────────────────────────────────────────────
 export {
   getStats,
@@ -103,9 +114,11 @@ export {
   notifyAtRiskStudent,
   notifyAtRiskLecturer,
   getHeatmapData,
+  previewAnnouncement,
+  sendAnnouncement,
 };
 
-// ─── Object export ────────────────────────────────────────────
+// ─── Object export (used by Announcements.jsx + other pages) ──
 export const adminService = {
   getStats,
   listUsers,
@@ -113,7 +126,7 @@ export const adminService = {
   updateUserRole,
   deleteUser,
   listClasses,
-  getClasses:         listClasses,
+  getClasses:           listClasses,
   getActiveSessions,
   forceCloseSession,
   startImpersonation,
@@ -123,6 +136,8 @@ export const adminService = {
   notifyAtRiskStudent,
   notifyAtRiskLecturer,
   getHeatmapData,
+  previewAnnouncement,
+  sendAnnouncement,
 };
 
 export default adminService;

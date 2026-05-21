@@ -44,14 +44,16 @@ function ScanHandoffModal({ session, onClose }) {
   const expoGoLink  = buildExpoGoLink(session.id);
   const qrUrl       = buildQrImageUrl(deepLink);
 
+  const openLink = useCallback((url) => {
+    try { window.location.href = url; } catch {}
+  }, []);
+
   // Try opening the app immediately on mount
   useEffect(() => {
-    window.location.href = deepLink;
-
-    // After 2.5s if user is still here, the app probably isn't installed
+    openLink(deepLink);
     const t = setTimeout(() => setPhase('fallback'), 2500);
     return () => clearTimeout(t);
-  }, [deepLink]);
+  }, [deepLink, openLink]);
 
   return (
     <motion.div
@@ -142,18 +144,18 @@ function ScanHandoffModal({ session, onClose }) {
 
                 {/* Open in app buttons */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                  <a href={deepLink}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 16px', background: 'var(--brand)', color: '#fff', borderRadius: 'var(--radius-atomic)', textDecoration: 'none', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)' }}>
+                  <button type="button" onClick={() => openLink(deepLink)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 16px', background: 'var(--brand)', color: '#fff', borderRadius: 'var(--radius-atomic)', border: 'none', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)', cursor: 'pointer', width: '100%' }}>
                     <Smartphone size={15} />
                     Open in AttendX app
                     <ExternalLink size={13} />
-                  </a>
-                  <a href={expoGoLink}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg-raised)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-atomic)', textDecoration: 'none', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)' }}>
+                  </button>
+                  <button type="button" onClick={() => openLink(expoGoLink)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg-raised)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-atomic)', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)', cursor: 'pointer', width: '100%' }}>
                     <QrCode size={15} />
                     Open in Expo Go
                     <ExternalLink size={13} />
-                  </a>
+                  </button>
                 </div>
 
                 {/* Install instructions */}
@@ -162,14 +164,14 @@ function ScanHandoffModal({ session, onClose }) {
                     Don't have Expo Go?
                   </p>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <a href="https://apps.apple.com/app/expo-go/id982107779" target="_blank" rel="noreferrer"
-                      style={{ flex: 1, textAlign: 'center', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 8, textDecoration: 'none', fontSize: 11, color: 'var(--brand-text)', fontWeight: 600 }}>
+                    <button type="button" onClick={() => openLink('https://apps.apple.com/app/expo-go/id982107779')}
+                      style={{ flex: 1, textAlign: 'center', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 8, border: 'none', fontSize: 11, color: 'var(--brand-text)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                       App Store (iOS)
-                    </a>
-                    <a href="https://play.google.com/store/apps/details?id=host.exp.exponent" target="_blank" rel="noreferrer"
-                      style={{ flex: 1, textAlign: 'center', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 8, textDecoration: 'none', fontSize: 11, color: 'var(--brand-text)', fontWeight: 600 }}>
+                    </button>
+                    <button type="button" onClick={() => openLink('https://play.google.com/store/apps/details?id=host.exp.exponent')}
+                      style={{ flex: 1, textAlign: 'center', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 8, border: 'none', fontSize: 11, color: 'var(--brand-text)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                       Google Play
-                    </a>
+                    </button>
                   </div>
                 </div>
               </motion.div>

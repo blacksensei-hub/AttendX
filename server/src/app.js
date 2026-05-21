@@ -72,9 +72,9 @@ app.use('/api/adjustments',   adjustmentRoutes);
 app.use('/api/schedules',     scheduleRoutes);
 
 // ─── Health check ─────────────────────────────────────────────
-app.get('/health', (req, res) =>
-  res.json({ status: 'ok', timestamp: new Date() })
-);
+const healthHandler = (req, res) => res.json({ status: 'ok', timestamp: new Date() });
+app.get('/health',     healthHandler);
+app.get('/api/health', healthHandler);
 
 // ─── Global error handler ─────────────────────────────────────
 app.use((err, req, res, next) => {

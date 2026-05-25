@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect }          from 'react';
 import { useQuery }                             from '@tanstack/react-query';
 import { useNavigate }                          from 'react-router-dom';
 import { motion, AnimatePresence }              from 'framer-motion';
@@ -9,8 +9,7 @@ import {
 import {
   AlertTriangle, Radio, ArrowRight, X,
   BookOpen, CheckCircle, Sparkles, TrendingUp,
-  LineChart as LineChartIcon, Smartphone,
-  QrCode, ExternalLink, Loader,
+  LineChart as LineChartIcon, Smartphone, QrCode,
 }                                               from 'lucide-react';
 
 import { classService }                         from '../../services/classService';
@@ -22,39 +21,11 @@ import PageShell                                from '../../components/layout/Pa
 import { AnimatedList, AnimatedItem }           from '../../components/ui/AnimatedList';
 import { SPRING, TAP, EASE, DURATION }          from '../../lib/motion';
 
-// ─── Deep link helpers ─────────────────────────────────────────
-// Primary: standalone build uses attendx://
-// Fallback: Expo Go uses exp+attendx://
-function buildDeepLink(sessionId) {
-  return `attendx://student/scan?sessionId=${sessionId}`;
-}
-
-function buildExpoGoLink(sessionId) {
-  return `exp+attendx://student/scan?sessionId=${sessionId}`;
-}
-
-function buildQrImageUrl(deepLink) {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(deepLink)}&bgcolor=0d0d1a&color=3b82f6&qzone=2`;
-}
-
 // ─── Scan Handoff Modal ────────────────────────────────────────
+// No deep link: custom schemes (attendx://) require a native build and
+// don't work in Expo Go. Instead we guide the student to open the app,
+// where the home screen auto-detects active sessions (polls every 30s).
 function ScanHandoffModal({ session, onClose }) {
-  const [phase, setPhase] = useState('opening'); // opening | fallback
-  const deepLink    = buildDeepLink(session.id);
-  const expoGoLink  = buildExpoGoLink(session.id);
-  const qrUrl       = buildQrImageUrl(deepLink);
-
-  const openLink = useCallback((url) => {
-    try { window.location.href = url; } catch {}
-  }, []);
-
-  // Try opening the app immediately on mount
-  useEffect(() => {
-    openLink(deepLink);
-    const t = setTimeout(() => setPhase('fallback'), 2500);
-    return () => clearTimeout(t);
-  }, [deepLink, openLink]);
-
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -96,87 +67,46 @@ function ScanHandoffModal({ session, onClose }) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', alignItems: 'center', textAlign: 'center' }}>
+        <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--brand-subtle)', border: '1px solid var(--brand-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <QrCode size={28} color="var(--brand-text)" />
+            </div>
+            <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 15 }}>
+              Open the AttendX app to scan
+            </p>
+          </div>
 
-          <AnimatePresence mode="wait" initial={false}>
-
-            {/* Phase: opening — waiting to see if app launches */}
-            {phase === 'opening' && (
-              <motion.div key="opening"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}
-              >
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                >
-                  <Loader size={32} color="var(--brand-text)" />
-                </motion.div>
-                <div>
-                  <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 15, marginBottom: 6 }}>Opening AttendX app…</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6 }}>
-                    If the app doesn't open automatically, follow the instructions below.
-                  </p>
+          {/* Steps */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              'Open the AttendX app on your phone',
+              `The live session for ${session.className} appears on your home screen`,
+              'Tap it, then scan the QR code your lecturer is displaying',
+            ].map((step, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', background: 'var(--brand)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                  {i + 1}
                 </div>
-              </motion.div>
-            )}
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, paddingTop: 2 }}>{step}</p>
+              </div>
+            ))}
+          </div>
 
-            {/* Phase: fallback — app not installed or didn't open */}
-            {phase === 'fallback' && (
-              <motion.div key="fallback"
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)', width: '100%' }}
-              >
-                {/* QR code */}
-                <div style={{ background: 'var(--bg-raised)', borderRadius: 14, padding: 12, border: '1px solid var(--border)' }}>
-                  <img src={qrUrl} alt="Deep link QR code" width={160} height={160}
-                    style={{ display: 'block', borderRadius: 8 }} />
-                </div>
+          {/* Hint */}
+          <div style={{ background: 'var(--bg-raised)', borderRadius: 'var(--radius-atomic)', padding: '10px 14px', border: '1px solid var(--border)' }}>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Radio size={12} color="var(--brand-text)" />
+              Don't see the session? It refreshes automatically every 30 seconds.
+            </p>
+          </div>
 
-                <div>
-                  <p style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14, marginBottom: 4 }}>
-                    Scan with Expo Go
-                  </p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, maxWidth: 300 }}>
-                    Open <strong>Expo Go</strong> on your phone and scan the QR code above, or tap the button below to open the app directly.
-                  </p>
-                </div>
-
-                {/* Open in app buttons */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                  <button type="button" onClick={() => openLink(deepLink)}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 16px', background: 'var(--brand)', color: '#fff', borderRadius: 'var(--radius-atomic)', border: 'none', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)', cursor: 'pointer', width: '100%' }}>
-                    <Smartphone size={15} />
-                    Open in AttendX app
-                    <ExternalLink size={13} />
-                  </button>
-                  <button type="button" onClick={() => openLink(expoGoLink)}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg-raised)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-atomic)', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)', cursor: 'pointer', width: '100%' }}>
-                    <QrCode size={15} />
-                    Open in Expo Go
-                    <ExternalLink size={13} />
-                  </button>
-                </div>
-
-                {/* Install instructions */}
-                <div style={{ background: 'var(--bg-raised)', borderRadius: 'var(--radius-atomic)', padding: '10px 14px', border: '1px solid var(--border)', width: '100%' }}>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Don't have Expo Go?
-                  </p>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" onClick={() => openLink('https://apps.apple.com/app/expo-go/id982107779')}
-                      style={{ flex: 1, textAlign: 'center', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 8, border: 'none', fontSize: 11, color: 'var(--brand-text)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      App Store (iOS)
-                    </button>
-                    <button type="button" onClick={() => openLink('https://play.google.com/store/apps/details?id=host.exp.exponent')}
-                      style={{ flex: 1, textAlign: 'center', padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 8, border: 'none', fontSize: 11, color: 'var(--brand-text)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Google Play
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <button type="button" onClick={onClose}
+            className="btn-primary"
+            style={{ padding: '10px 16px', width: '100%', justifyContent: 'center' }}>
+            <CheckCircle size={15} />
+            Got it
+          </button>
         </div>
       </motion.div>
     </motion.div>
@@ -375,7 +305,7 @@ export default function StudentDashboard() {
           {/* Instruction note */}
           <p style={{ color: 'var(--brand-text)', fontSize: 11, marginTop: 10, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 5 }}>
             <QrCode size={11} />
-            QR scanning requires the AttendX mobile app — tapping the button will open it automatically.
+            QR scanning happens in the AttendX mobile app — open it to mark your attendance.
           </p>
         </motion.div>
       )}
@@ -457,7 +387,7 @@ export default function StudentDashboard() {
         </motion.div>
       </div>
 
-      {/* Deep link handoff modal */}
+      {/* Handoff modal */}
       <AnimatePresence>
         {handoffSession && (
           <ScanHandoffModal

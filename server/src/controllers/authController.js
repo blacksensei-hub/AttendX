@@ -17,9 +17,30 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password, role, studentId, department } = req.body;
 
-    // Check duplicate email
-    const exists = await User.findOne({ where: { email } });
-    if (exists) return res.status(409).json(error('Email already registered'));
+    const normalizedEmail = email?.toLowerCase().trim();
+    const finalRole = role || 'student';
+
+    // ── Server-side validation (defense beyond the frontend) ──
+    if (finalRole === 'student') {
+      const id = (studentId ?? '').trim();
+      if (!/^\d{10}$/.test(id)) {
+        return res.status(400).json(error('Student ID must be exactly 10 digits'));
+      }
+    }
+
+    // ── Duplicate email check (case-insensitive) ──
+    const emailExists = await User.findOne({ where: { email: normalizedEmail } });
+    if (emailExists) {
+      return res.status(409).json(error('Email already registered'));
+    }
+
+    // ── Duplicate student ID check (students only) ──
+    if (finalRole === 'student' && studentId) {
+      const idExists = await User.findOne({ where: { student_id: studentId.trim() } });
+      if (idExists) {
+        return res.status(409).json(error('Student ID already registered'));
+      }
+    }
 
     // Hash password
     const hashed = await bcrypt.hash(password, 12);
@@ -27,10 +48,10 @@ exports.register = async (req, res) => {
     // Create user
     const user = await User.create({
       name,
-      email:      email.toLowerCase(),
+      email:      normalizedEmail,
       password:   hashed,
-      role:       role || 'student',
-      student_id: studentId,
+      role:       finalRole,
+      student_id: finalRole === 'student' ? studentId.trim() : null,
       department,
     });
 
@@ -42,7 +63,13 @@ exports.register = async (req, res) => {
     );
 
     return res.status(201).json(success({
-      user:  { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id:         user.id,
+        name:       user.name,
+        email:      user.email,
+        role:       user.role,
+        student_id: user.student_id,
+      },
       token,
     }, 'Account created successfully'));
 

@@ -10,7 +10,9 @@ const User = sequelize.define('User', {
   role:       { type: DataTypes.ENUM('lecturer', 'student', 'admin'),
                 allowNull: false, defaultValue: 'student' },
   avatar_url: { type: DataTypes.STRING(500) },
-  student_id: { type: DataTypes.STRING(50) },
+  // Unique among students; lecturers/admins remain NULL.
+  // Postgres treats multiple NULLs as distinct, so non-students don't conflict.
+  student_id: { type: DataTypes.STRING(50), unique: true },
   department: { type: DataTypes.STRING(100) },
   is_active:  { type: DataTypes.BOOLEAN, defaultValue: true },
 }, {

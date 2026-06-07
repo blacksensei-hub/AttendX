@@ -27,11 +27,19 @@ import {
  * ═════════════════════════════════════════════════════════════════
  */
 
+// Empty number inputs arrive from the form as '' (not undefined).
+// z.coerce.number() would turn '' into 0 (Number('') === 0), which then
+// fails the .min() checks — and .optional() only permits undefined, not 0.
+// Converting blanks to undefined first lets .default()/.optional() work,
+// so "Auto-close after" can genuinely be left blank for manual close.
+const blankToUndefined = (v) =>
+  v === '' || v === null || v === undefined ? undefined : v;
+
 const schema = z.object({
   title:          z.string().optional(),
-  late_threshold: z.coerce.number().min(1).max(60).default(15),
-  qr_interval:    z.coerce.number().min(3).max(60).default(5),
-  close_after:    z.coerce.number().min(5).max(180).optional(),
+  late_threshold: z.preprocess(blankToUndefined, z.coerce.number().min(1).max(60).default(15)),
+  qr_interval:    z.preprocess(blankToUndefined, z.coerce.number().min(3).max(60).default(5)),
+  close_after:    z.preprocess(blankToUndefined, z.coerce.number().min(5).max(180).optional()),
 });
 
 export default function OpenSessionModal({ classData, open, onClose, onOpened }) {

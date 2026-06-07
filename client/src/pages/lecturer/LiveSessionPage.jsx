@@ -1,5 +1,5 @@
 // client/src/pages/lecturer/LiveSessionPage.jsx
-import { useState, useEffect }               from 'react';
+import { useState, useEffect, useRef }       from 'react';
 import { useParams, useNavigate }            from 'react-router-dom';
 import {
   useQuery, useMutation, useQueryClient,
@@ -29,6 +29,17 @@ export default function LiveSessionPage() {
   const { connected, on, off } = useSocket(sessionId);
   const [attendance, setAttendance] = useState([]);
 
+  // Distinguishes a manual close (this lecturer clicked "Close session")
+  // from an automatic one (scheduler / force-close). The backend emits the
+  // same `session:closed` socket event for both and it round-trips back to
+  // this client, so without this flag a manual close would ALSO trigger the
+  // "automatically closed" toast. Set synchronously in mutationFn so it's
+  // already true by the time the socket event arrives.
+  const manualCloseRef  = useRef(false);
+  // Ensures only the first close signal (socket OR poll) is acted on, so an
+  // automatic close can't fire the toast + navigate twice.
+  const closeHandledRef = useRef(false);
+
   // Session data — polls every 30s
   const { data: sessionData, isLoading } = useQuery({
     queryKey:        ['session', sessionId],
@@ -42,6 +53,8 @@ export default function LiveSessionPage() {
   useEffect(() => {
     const session = sessionData?.session;
     if (session?.status === 'closed') {
+      if (manualCloseRef.current || closeHandledRef.current) return;
+      closeHandledRef.current = true;
       toast('Session was automatically closed', { icon: '🔒' });
       qc.invalidateQueries({ queryKey: ['classes'] });
       navigate('/lecturer/classes');
@@ -51,6 +64,8 @@ export default function LiveSessionPage() {
   useEffect(() => {
     const handler = ({ sessionId: closedId }) => {
       if (closedId !== sessionId) return;
+      if (manualCloseRef.current || closeHandledRef.current) return;
+      closeHandledRef.current = true;
       toast('Session was automatically closed', { icon: '🔒' });
       qc.invalidateQueries({ queryKey: ['classes'] });
       navigate('/lecturer/classes');
@@ -91,14 +106,22 @@ export default function LiveSessionPage() {
 
   // Manual close
   const closeMut = useMutation({
-    mutationFn: () => sessionService.closeSession(sessionId),
+    mutationFn: () => {
+      // Mark this as a deliberate close BEFORE the request fires, so the
+      // socket/poll handlers stay silent when the event round-trips back.
+      manualCloseRef.current = true;
+      return sessionService.closeSession(sessionId);
+    },
     onSuccess:  () => {
       toast.success('Session closed');
       qc.invalidateQueries({ queryKey: ['classes'] });
       navigate('/lecturer/classes');
     },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || 'Failed to close session'),
+    onError: (err) => {
+      // Close failed — reset so a later auto-close still notifies correctly.
+      manualCloseRef.current = false;
+      toast.error(err.response?.data?.message || 'Failed to close session');
+    },
   });
 
   if (isLoading) {

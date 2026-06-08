@@ -175,11 +175,28 @@ exports.getCurrentQR = async (req, res) => {
     if (!session || session.status !== 'open')
       return res.status(404).json(error('No active session'));
 
+    // Only REUSE an existing token if it still has a comfortable margin of
+    // life left; otherwise mint a fresh one. This buffer MUST exceed the
+    // grace that qrService.generateToken bakes into every token:
+    //
+    //     expires_at = now + (qr_interval + 2) seconds   // 2s grace
+    //
+    // The lecturer's display polls for the next token at ~qr_interval, when
+    // the current token still has ~2s of that grace remaining. A plain
+    // `expires_at > now` check (or any buffer ≤ 2s) therefore hands the SAME
+    // token back, making the code linger for two windows before rotating.
+    // 3s (2s grace + ~1s poll-timing jitter) guarantees the boundary poll
+    // gets a genuinely fresh token, so the QR and its code rotate each cycle.
+    // (Safe for the UI's 3s minimum interval: a fresh token's life is
+    // interval + 2 ≥ 5s, comfortably above this buffer.)
+    const REUSE_BUFFER_MS = 3000;
+    const cutoff = new Date(Date.now() + REUSE_BUFFER_MS);
+
     let qr = await QRToken.findOne({
       where: {
         session_id: sessionId,
         used:       false,
-        expires_at: { [Op.gt]: new Date() },
+        expires_at: { [Op.gt]: cutoff },
       },
       order: [['issued_at', 'DESC']],
     });

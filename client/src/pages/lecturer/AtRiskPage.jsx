@@ -2,8 +2,8 @@ import { useState }                                  from 'react';
 import { useQuery }                                  from '@tanstack/react-query';
 import { motion, AnimatePresence }                   from 'framer-motion';
 import {
-  AlertTriangle, Mail, ChevronDown, ChevronUp,
-  Settings, CheckCircle,
+  AlertTriangle, Mail, ChevronDown,
+  Settings, CheckCircle, X, FileText, PenLine,
 }                                                    from 'lucide-react';
 import toast                                         from 'react-hot-toast';
 
@@ -21,7 +21,8 @@ import {
  * Grouped per class. Each class card:
  *   • Shows how many students are at risk and the current threshold
  *   • Lets the lecturer edit the threshold inline
- *   • Lets the lecturer email all at-risk students in one click
+ *   • Lets the lecturer email all at-risk students — choosing between
+ *     the standard template or a personal message they write
  *   • Expands to show each student's rate with a colour-coded pill
  * ═════════════════════════════════════════════════════════════════
  */
@@ -30,6 +31,7 @@ export default function AtRiskPage() {
   const [sending,        setSending]        = useState(null);
   const [editThreshold,  setEditThreshold]  = useState(null);
   const [newThreshold,   setNewThreshold]   = useState('');
+  const [emailFor,       setEmailFor]       = useState(null); // class the email modal is open for
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['at-risk-students'],
@@ -40,11 +42,15 @@ export default function AtRiskPage() {
   const totalAtRisk = data?.totalAtRisk ?? 0;
 
   // ── Send warnings to all at-risk students in a class ────────
-  const sendWarnings = async (classId) => {
+  // customMessage is optional — when blank the backend uses the template.
+  const sendWarnings = async (classId, customMessage) => {
     setSending(classId);
     try {
-      const { data } = await api.post('/thresholds/send-warnings', { classId });
+      const body = { classId };
+      if (customMessage) body.customMessage = customMessage;
+      const { data } = await api.post('/thresholds/send-warnings', body);
       toast.success(data.message ?? 'Warnings sent');
+      setEmailFor(null);
       refetch();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to send warnings');
@@ -206,15 +212,221 @@ export default function AtRiskPage() {
                   }}
                   onThresholdChange={setNewThreshold}
                   onSaveThreshold={() => updateThreshold(cls.classId)}
-                  onSendWarnings={() => sendWarnings(cls.classId)}
-                  sending={sending === cls.classId}
+                  onRequestEmail={() => setEmailFor(cls)}
                 />
               </AnimatedItem>
             ))}
           </AnimatedList>
         )}
       </AnimatePresence>
+
+      {/* ── Email choice modal ──────────────────────────────── */}
+      <AnimatePresence>
+        {emailFor && (
+          <EmailWarningModal
+            cls={emailFor}
+            sending={sending === emailFor.classId}
+            onClose={() => setEmailFor(null)}
+            onSend={(customMessage) => sendWarnings(emailFor.classId, customMessage)}
+          />
+        )}
+      </AnimatePresence>
     </PageShell>
+  );
+}
+
+// ─── Email choice modal ───────────────────────────────────────
+function EmailWarningModal({ cls, sending, onClose, onSend }) {
+  const [mode, setMode]       = useState('template'); // 'template' | 'custom'
+  const [message, setMessage] = useState('');
+
+  const count   = cls.students.length;
+  const canSend = mode === 'template' || message.trim().length > 0;
+
+  const handleSend = () => {
+    if (!canSend || sending) return;
+    onSend(mode === 'custom' ? message.trim() : null);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: DURATION.fast }}
+      onClick={e => { if (e.target === e.currentTarget && !sending) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 'var(--space-3)',
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0, y: 16 }}
+        animate={{ scale: 1,    opacity: 1, y: 0  }}
+        exit={{    scale: 0.92, opacity: 0, y: 16 }}
+        transition={SPRING.gentle}
+        style={{
+          background: 'var(--bg-card)', borderRadius: 'var(--radius-organism)',
+          border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
+          width: '100%', maxWidth: 480, overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: 'var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--red-bg)', border: '1px solid var(--red-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Mail size={18} color="var(--red)" />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>Email at-risk students</p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cls.className}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} disabled={sending}
+            style={{ background: 'none', border: 'none', cursor: sending ? 'default' : 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex', opacity: sending ? 0.4 : 1 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.5 }}>
+            <strong style={{ color: 'var(--text-primary)' }}>{count}</strong> student{count !== 1 ? 's' : ''} below the {cls.threshold}% threshold will receive this email.
+          </p>
+
+          {/* Two option cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <OptionCard
+              selected={mode === 'template'}
+              icon={FileText}
+              title="Standard template"
+              desc="The default warning email"
+              onClick={() => setMode('template')}
+            />
+            <OptionCard
+              selected={mode === 'custom'}
+              icon={PenLine}
+              title="Personal message"
+              desc="Write your own note"
+              onClick={() => setMode('custom')}
+            />
+          </div>
+
+          {/* Textarea — only when writing a personal message */}
+          <AnimatePresence initial={false}>
+            {mode === 'custom' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{    opacity: 0, height: 0 }}
+                transition={{ duration: DURATION.medium, ease: EASE.state }}
+                style={{ overflow: 'hidden' }}
+              >
+                <textarea
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  maxLength={1000}
+                  rows={5}
+                  autoFocus
+                  placeholder="Write a message to your at-risk students — e.g. encourage them to attend, mention office hours, or how to catch up…"
+                  style={{
+                    width:        '100%',
+                    resize:       'vertical',
+                    minHeight:    '110px',
+                    padding:      '12px 14px',
+                    background:   'var(--bg-raised)',
+                    border:       '1px solid var(--border)',
+                    borderRadius: 'var(--radius-atomic)',
+                    color:        'var(--text-primary)',
+                    fontSize:     'var(--text-sm)',
+                    fontFamily:   'var(--font-body)',
+                    lineHeight:   1.6,
+                    boxSizing:    'border-box',
+                  }}
+                />
+                <p style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 6, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span>The attendance stats are still added automatically.</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{message.length}/1000</span>
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <motion.button
+              whileTap={TAP.button}
+              type="button"
+              onClick={onClose}
+              disabled={sending}
+              className="btn-ghost"
+              style={{ flex: 1, opacity: sending ? 0.6 : 1 }}
+            >
+              Cancel
+            </motion.button>
+            <motion.button
+              whileTap={TAP.button}
+              whileHover={canSend && !sending ? { y: -1 } : undefined}
+              transition={SPRING.snappy}
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend || sending}
+              className="btn-danger"
+              style={{ flex: 2, opacity: (!canSend || sending) ? 0.6 : 1 }}
+            >
+              <Mail size={15} />
+              {sending ? 'Sending…' : `Send to ${count}`}
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── Selectable option card (template vs personal) ────────────
+function OptionCard({ selected, icon: Icon, title, desc, onClick }) {
+  return (
+    <motion.button
+      type="button"
+      whileTap={TAP.button}
+      whileHover={!selected ? { y: -1 } : undefined}
+      transition={SPRING.snappy}
+      onClick={onClick}
+      animate={{
+        borderColor:     selected ? 'var(--brand)'        : 'var(--border)',
+        backgroundColor: selected ? 'var(--brand-subtle)' : 'var(--bg-raised)',
+      }}
+      style={{
+        display:       'flex',
+        flexDirection: 'column',
+        alignItems:    'flex-start',
+        gap:           8,
+        padding:       12,
+        borderRadius:  'var(--radius-atomic)',
+        border:        '1px solid',
+        cursor:        'pointer',
+        textAlign:     'left',
+        fontFamily:    'var(--font-body)',
+      }}
+    >
+      <div style={{
+        width: 28, height: 28, borderRadius: 'var(--radius-atomic)',
+        background: selected ? 'var(--brand)' : 'var(--bg-card)',
+        border: `1px solid ${selected ? 'var(--brand)' : 'var(--border)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Icon size={14} style={{ color: selected ? '#fff' : 'var(--text-muted)' }} />
+      </div>
+      <div>
+        <p style={{ color: selected ? 'var(--brand-text)' : 'var(--text-primary)', fontSize: 'var(--text-sm)', fontWeight: 600, fontFamily: 'var(--font-display)', marginBottom: 2 }}>
+          {title}
+        </p>
+        <p style={{ color: 'var(--text-muted)', fontSize: 10, lineHeight: 1.4 }}>
+          {desc}
+        </p>
+      </div>
+    </motion.button>
   );
 }
 
@@ -223,7 +435,7 @@ function ClassRiskCard({
   cls, expanded, onToggle,
   editing, newThreshold, onStartEdit, onCancelEdit,
   onThresholdChange, onSaveThreshold,
-  onSendWarnings, sending,
+  onRequestEmail,
 }) {
   return (
     <motion.div
@@ -413,22 +625,20 @@ function ClassRiskCard({
             )}
           </AnimatePresence>
 
-          {/* Email all button */}
+          {/* Email all button — opens the choice modal */}
           <motion.button
             whileTap={TAP.button}
-            whileHover={!sending ? { y: -1 } : undefined}
+            whileHover={{ y: -1 }}
             transition={SPRING.snappy}
-            onClick={onSendWarnings}
-            disabled={sending}
+            onClick={onRequestEmail}
             className="btn-danger"
             style={{
               padding:  '8px 12px',
               fontSize: 'var(--text-xs)',
-              opacity:  sending ? 0.6 : 1,
             }}
           >
             <Mail size={13} />
-            {sending ? 'Sending…' : 'Email all'}
+            Email all
           </motion.button>
 
           {/* Expand toggle */}

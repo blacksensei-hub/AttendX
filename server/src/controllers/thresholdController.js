@@ -9,6 +9,16 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
 });
 
+// ─── Escape user-supplied text before embedding in email HTML ─
+// Lecturers are trusted, but escaping keeps a stray < or & from
+// breaking the markup, and avoids any HTML injection in the email.
+function escapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // ─── Get at-risk students for all of a lecturer's classes ─────
 exports.getAtRiskStudents = async (req, res) => {
   try {
@@ -173,11 +183,15 @@ exports.getMyAttendanceRates = async (req, res) => {
 // ─── Send warning emails to all at-risk students in a class ───
 exports.sendThresholdWarnings = async (req, res) => {
   try {
-    const { classId }   = req.body;
+    const { classId, customMessage } = req.body;
     const { sequelize } = require('../models');
 
     if (!classId)
       return res.status(400).json(error('classId is required'));
+
+    // Optional lecturer note. Trim and treat blank as "use the template".
+    const personalNote =
+      typeof customMessage === 'string' ? customMessage.trim() : '';
 
     // Verify the class belongs to this lecturer and fetch the threshold.
     // attendance_threshold is now defined on the Class model so it will
@@ -256,6 +270,7 @@ exports.sendThresholdWarnings = async (req, res) => {
           threshold,
           totalSessions:  parseInt(student.totalSessions),
           attended:       parseInt(student.attended),
+          customMessage:  personalNote || null,
         })
       )
     );
@@ -301,12 +316,39 @@ exports.updateThreshold = async (req, res) => {
 // ─── Threshold warning email ──────────────────────────────────
 async function sendThresholdWarningEmail({
   to, studentName, className, attendanceRate, threshold,
-  totalSessions, attended,
+  totalSessions, attended, customMessage,
 }) {
   const sessionsNeeded = Math.max(
     0,
     Math.ceil((threshold / 100 * totalSessions) - attended)
   );
+
+  // When the lecturer provides a personal note, show it in a quote block
+  // in place of the generic warning paragraph. Otherwise use the template.
+  const introBlock = customMessage
+    ? `
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 8px;">
+          Hi <strong>${escapeHtml(studentName)}</strong>,
+        </p>
+        <p style="color:#6b7280;font-size:13px;margin:0 0 12px;">
+          A message from your lecturer regarding
+          <strong style="color:#2563eb;">${escapeHtml(className)}</strong>:
+        </p>
+        <div style="background:#f8faff;border-left:4px solid #2563eb;
+                    border-radius:0 10px 10px 0;padding:16px 20px;margin:0 0 20px;
+                    color:#374151;font-size:15px;line-height:1.7;">
+          ${escapeHtml(customMessage).replace(/\n/g, '<br/>')}
+        </div>
+      `
+    : `
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+          Hi <strong>${escapeHtml(studentName)}</strong>,<br><br>
+          Your attendance for
+          <strong style="color:#2563eb;">${escapeHtml(className)}</strong>
+          has dropped below the minimum required level.
+          Immediate action is needed.
+        </p>
+      `;
 
   const html = `
     <!DOCTYPE html>
@@ -336,14 +378,8 @@ async function sendThresholdWarningEmail({
                             font-size:20px;font-weight:700;">
                   Your attendance is below the required threshold
                 </h2>
-                <p style="color:#374151;font-size:15px;line-height:1.6;
-                           margin:0 0 20px;">
-                  Hi <strong>${studentName}</strong>,<br><br>
-                  Your attendance for
-                  <strong style="color:#2563eb;">${className}</strong>
-                  has dropped below the minimum required level.
-                  Immediate action is needed.
-                </p>
+
+                ${introBlock}
 
                 <!-- Stats card -->
                 <table cellpadding="0" cellspacing="0"

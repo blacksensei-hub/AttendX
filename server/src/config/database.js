@@ -14,8 +14,20 @@ const sequelize = process.env.DATABASE_URL
   ? new Sequelize(process.env.DATABASE_URL, {
       dialect: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
+      // Neon's pooled endpoint is PgBouncer in transaction mode. A raw TCP
+      // connection to it succeeds even when Sequelize's own connect fails —
+      // confirmed via a debug route that opened a bare socket successfully
+      // from the same host where Sequelize was refused. That gap points at
+      // the Postgres-protocol/pool layer, not the network: PgBouncer in
+      // transaction mode doesn't support some session-level behaviour
+      // Sequelize assumes by default (prepared statement caching being the
+      // classic one). `pgbouncer: true` tells Sequelize's pg dialect to
+      // disable that behaviour. A smaller pool matches Neon's stricter
+      // per-connection limits on the free tier — 10 simultaneous connection
+      // attempts from a cold pool is a plausible way to get intermittently
+      // refused where a single bare socket connects fine.
       pool: {
-        max:     10,
+        max:     5,
         min:     0,
         acquire: 30000,
         idle:    10000,
@@ -29,6 +41,9 @@ const sequelize = process.env.DATABASE_URL
           require: true,
           rejectUnauthorized: false,
         },
+        // Required when connecting through Neon's (or any) PgBouncer pooler
+        // in transaction mode.
+        pgbouncer: true,
       },
     })
   : new Sequelize(

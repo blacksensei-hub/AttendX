@@ -23,7 +23,6 @@ const thresholdRoutes  = require('./routes/thresholds');
 const adjustmentRoutes = require('./routes/adjustments');
 const scheduleRoutes   = require('./routes/schedules');
 const impersonationRoutes = require('./routes/impersonation');
-const debugRoutes = require('./routes/debug');
 
 const app    = express();
 const server = http.createServer(app);
@@ -103,7 +102,6 @@ app.use('/api/schedules',     scheduleRoutes);
 // (usually student/lecturer) — a router-level authorize('admin') would
 // trap admins inside impersonation with no way out. See routes/impersonation.js.
 app.use('/api/impersonation', impersonationRoutes);
-app.use('/api', debugRoutes);
 
 // ─── Health check ─────────────────────────────────────────────
 // Exposed at both paths: /health for platform probes (Railway) and
@@ -203,11 +201,9 @@ async function start() {
       startScheduleRunner(io);
     });
 
-    } catch (err) {
-    console.error('❌ Startup failed (continuing anyway for diagnostics):', err);
-    server.listen(PORT, () => {
-      console.log(`🚀 [DIAGNOSTIC MODE] Server running on http://localhost:${PORT}`);
-    });
+  } catch (err) {
+    console.error('❌ Startup failed:', err);
+    process.exit(1);
   }
 }
 

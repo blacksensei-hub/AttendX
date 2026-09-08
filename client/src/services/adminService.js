@@ -31,6 +31,14 @@ const deleteUser = async (userId) => {
   return unwrap(data);
 };
 
+// Clears a student's device lock so their next sign-in registers a new
+// device. Needed when someone legitimately changes phone, reinstalls the
+// app, or clears their browser — otherwise they're locked out for good.
+const resetUserDevice = async (userId) => {
+  const { data } = await api.put(`/admin/users/${userId}/reset-device`);
+  return unwrap(data);
+};
+
 // ─── Classes ─────────────────────────────────────────────────
 const listClasses = async (params = {}) => {
   const { data } = await api.get('/admin/classes', { params });
@@ -49,8 +57,10 @@ const forceCloseSession = async (sessionId) => {
 };
 
 // ─── Impersonation ───────────────────────────────────────────
+// The route is POST /impersonation/start/:userId — the target id goes in
+// the PATH, not the body. Only `reason` is sent as the payload.
 const startImpersonation = async (targetUserId, reason) => {
-  const { data } = await api.post('/impersonation/start', { targetUserId, reason });
+  const { data } = await api.post(`/impersonation/start/${targetUserId}`, { reason });
   return unwrap(data);
 };
 
@@ -104,6 +114,7 @@ export {
   toggleUserStatus,
   updateUserRole,
   deleteUser,
+  resetUserDevice,
   listClasses,
   getActiveSessions,
   forceCloseSession,
@@ -125,6 +136,7 @@ export const adminService = {
   toggleUserStatus,
   updateUserRole,
   deleteUser,
+  resetUserDevice,
   listClasses,
   getClasses:           listClasses,
   getActiveSessions,

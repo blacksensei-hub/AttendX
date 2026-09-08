@@ -18,11 +18,6 @@ import {
  *   • Countdown ring  — SVG progress stroke around the code
  *   • Token preview   — monospace token box for web-only testing
  *
- * The QR image and the token text are both rendered from the same
- * `qrToken` state and swap on the same `key`, so the code shown
- * underneath always matches the QR currently on screen — they
- * rotate together, never drifting apart.
- *
  * The rotation interval is configured per-session by the lecturer.
  * Students have roughly qrInterval seconds to scan before the token
  * becomes invalid — the pulse ring + countdown work together to
@@ -39,8 +34,6 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
   const tickRef = useRef(null);
 
   // ── Fetch a fresh QR token ───────────────────────────────────
-  // Updates qrToken + bumps key in the same render, so the QR and
-  // the code text below swap together off the same source of truth.
   const fetchQR = useCallback(async () => {
     if (stopped) return;
     setIsLoading(true);
@@ -54,7 +47,7 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
       if (err.response?.status === 404 || err.response?.status === 400) {
         setStopped(true);
         setQrToken(null);
-        if (tickRef.current) clearTimeout(tickRef.current);
+        if (tickRef.current) clearInterval(tickRef.current);
       }
     } finally {
       setIsLoading(false);
@@ -67,26 +60,23 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
   }, []);   // eslint-disable-line
 
   // ── Rotation timer ───────────────────────────────────────────
-  // One tick per second. At the final second we fetch the next token
-  // rather than decrementing, so the QR + code text rotate together.
-  // fetchQR is called from the timeout callback — NOT inside a
-  // setState updater — so React StrictMode's double-invocation can't
-  // fire two fetches and flicker mismatched tokens.
   useEffect(() => {
     if (!qrToken || stopped) return;
 
-    tickRef.current = setTimeout(() => {
-      if (countdown <= 1) {
-        fetchQR();
-      } else {
-        setCountdown(c => c - 1);
-      }
+    tickRef.current = setInterval(() => {
+      setCountdown(c => {
+        if (c <= 1) {
+          fetchQR();
+          return qrInterval;
+        }
+        return c - 1;
+      });
     }, 1000);
 
     return () => {
-      if (tickRef.current) clearTimeout(tickRef.current);
+      if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [countdown, qrToken, stopped]);   // eslint-disable-line
+  }, [qrToken, stopped]);   // eslint-disable-line
 
   // ── Copy token ───────────────────────────────────────────────
   const copyToken = () => {
@@ -376,32 +366,16 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
             </motion.button>
           </div>
 
-          {/*
-            Token value swaps in lockstep with the QR above — same
-            `key`, same mode="wait" timing — so the code shown here
-            always matches the QR currently rendered, changing
-            together on every rotation.
-          */}
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={key}
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{    opacity: 0, y: 4 }}
-              transition={{ duration: DURATION.base, ease: EASE.state }}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize:   'var(--text-xs)',
-                color:      'var(--brand-text)',
-                wordBreak:  'break-all',
-                lineHeight: 1.5,
-                fontWeight: 600,
-                margin:     0,
-              }}
-            >
-              {qrToken}
-            </motion.p>
-          </AnimatePresence>
+          <p style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize:   'var(--text-xs)',
+            color:      'var(--brand-text)',
+            wordBreak:  'break-all',
+            lineHeight: 1.5,
+            fontWeight: 600,
+          }}>
+            {qrToken}
+          </p>
         </motion.div>
       )}
 

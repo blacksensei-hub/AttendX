@@ -5,11 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, UserCheck, UserX, Trash2, Eye, Shield,
   Loader2, ChevronLeft, ChevronRight, AlertTriangle,
+  Smartphone,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   listUsers, toggleUserStatus, updateUserRole,
-  deleteUser, startImpersonation,
+  deleteUser, startImpersonation, resetUserDevice,
 } from '../../services/adminService';
 import { useAuthStore }  from '../../store/authStore';
 import { useIsMobile }   from '../../hooks/useIsMobile';
@@ -38,6 +39,7 @@ export default function AdminUsersPage() {
   const [busyId,  setBusyId]  = useState(null);
   const [confirmDelete,      setConfirmDelete]      = useState(null);
   const [confirmImpersonate, setConfirmImpersonate] = useState(null);
+  const [confirmResetDevice, setConfirmResetDevice] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -95,6 +97,23 @@ export default function AdminUsersPage() {
       toast.success('User deleted');
     } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
     finally { setBusyId(null); setConfirmDelete(null); }
+  }
+
+  // Clears a student's device lock so their next sign-in registers a new
+  // device. Needed whenever someone legitimately changes phone or clears
+  // their browser — without it they're locked out permanently.
+  async function handleResetDevice(user) {
+    setBusyId(user.id);
+    try {
+      await resetUserDevice(user.id);
+      setUsers(rows => rows.map(u =>
+        u.id === user.id
+          ? { ...u, bound_device_id: null, device_bound_at: null }
+          : u
+      ));
+      toast.success(`${user.name} can now sign in from a new device`);
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
+    finally { setBusyId(null); setConfirmResetDevice(null); }
   }
 
   async function handleImpersonate(user, reason) {
@@ -172,6 +191,7 @@ export default function AdminUsersPage() {
               onChangeRole={r => handleChangeRole(user, r)}
               onDelete={() => setConfirmDelete(user)}
               onImpersonate={() => setConfirmImpersonate(user)}
+              onResetDevice={() => setConfirmResetDevice(user)}
             />
           ))}
         </div>
@@ -193,6 +213,7 @@ export default function AdminUsersPage() {
                 const isSelf  = user.id === currentUser?.id;
                 const isBusy  = busyId === user.id;
                 const canImp  = user.role !== 'admin' && user.is_active && !isSelf;
+                const isBound = Boolean(user.bound_device_id);
                 return (
                   <tr key={user.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 16px' }}>
@@ -201,7 +222,10 @@ export default function AdminUsersPage() {
                           {(user.name || '?').charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.name}</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {user.name}
+                            {isBound && <DeviceLockBadge />}
+                          </div>
                           {user.student_id && <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{user.student_id}</div>}
                         </div>
                       </div>
@@ -226,6 +250,13 @@ export default function AdminUsersPage() {
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        {/* Only meaningful for accounts that actually hold a binding */}
+                        <IconBtn
+                          disabled={!isBound || isBusy}
+                          onClick={() => setConfirmResetDevice(user)}
+                          title={isBound ? 'Reset device lock' : 'No device registered'}
+                          icon={Smartphone}
+                        />
                         <IconBtn disabled={!canImp || isBusy} onClick={() => setConfirmImpersonate(user)} title={canImp ? 'View as' : 'Cannot impersonate'} icon={Eye} />
                         <IconBtn disabled={isSelf || isBusy} onClick={() => handleToggleStatus(user)} title={user.is_active ? 'Deactivate' : 'Activate'} icon={user.is_active ? UserX : UserCheck} />
                         <IconBtn disabled={isSelf || isBusy} onClick={() => setConfirmDelete(user)} title="Delete" icon={Trash2} danger />
@@ -266,6 +297,23 @@ export default function AdminUsersPage() {
         )}
       </AnimatePresence>
       <AnimatePresence>
+        {confirmResetDevice && (
+          <ConfirmModal
+            icon={<Smartphone size={22} />} tone="brand"
+            title="Reset device lock?"
+            message={<>
+              <strong>{confirmResetDevice.name}</strong> is currently locked to one device.
+              Resetting lets them sign in from a new phone or browser — whichever
+              device they use next becomes their registered one.
+            </>}
+            confirmLabel="Reset device"
+            onConfirm={() => handleResetDevice(confirmResetDevice)}
+            onCancel={() => setConfirmResetDevice(null)}
+            loading={busyId === confirmResetDevice.id}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {confirmImpersonate && (
           <ImpersonateModal
             user={confirmImpersonate}
@@ -281,9 +329,30 @@ export default function AdminUsersPage() {
   );
 }
 
+// ─── Device lock badge ────────────────────────────────────────
+function DeviceLockBadge() {
+  return (
+    <span
+      title="Locked to one device"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 3,
+        padding: '1px 7px', borderRadius: 99,
+        fontSize: 10, fontWeight: 700,
+        background: 'var(--brand-subtle)',
+        color: 'var(--brand-text)',
+        border: '1px solid var(--brand-border)',
+      }}
+    >
+      <Smartphone size={9} />
+      Locked
+    </span>
+  );
+}
+
 // ─── Mobile user card ─────────────────────────────────────────
-function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onImpersonate }) {
-  const canImp = user.role !== 'admin' && user.is_active && !isSelf;
+function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onImpersonate, onResetDevice }) {
+  const canImp  = user.role !== 'admin' && user.is_active && !isSelf;
+  const isBound = Boolean(user.bound_device_id);
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-molecular)', padding: 'var(--space-3)' }}>
       {/* Top row: avatar + name + status */}
@@ -292,7 +361,10 @@ function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onIm
           {(user.name || '?').charAt(0).toUpperCase()}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
+            {isBound && <DeviceLockBadge />}
+          </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
           {user.student_id && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{user.student_id}</div>}
         </div>
@@ -315,6 +387,7 @@ function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onIm
         </select>
 
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <IconBtn disabled={!isBound || isBusy} onClick={onResetDevice} title={isBound ? 'Reset device lock' : 'No device registered'} icon={Smartphone} />
           <IconBtn disabled={!canImp || isBusy} onClick={onImpersonate} title={canImp ? 'View as' : 'Cannot'} icon={Eye} />
           <IconBtn disabled={isSelf || isBusy} onClick={onToggle} title={user.is_active ? 'Deactivate' : 'Activate'} icon={user.is_active ? UserX : UserCheck} />
           <IconBtn disabled={isSelf || isBusy} onClick={onDelete} title="Delete" icon={Trash2} danger />

@@ -4,6 +4,17 @@ const { User } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 const { success, error } = require('../utils/apiResponse');
 
+// ─── Device binding policy ────────────────────────────────────
+// Which roles are locked to a single device. Students only, deliberately:
+// they're the ones with an incentive to share credentials so a friend can
+// mark attendance for them. Binding staff would risk locking an admin out
+// of their own panel with nobody able to reset them — a much worse failure
+// than the thing we're preventing.
+//
+// To apply binding to every role, change isBindable to: () => true
+const BOUND_ROLES = ['student'];
+const isBindable = (role) => BOUND_ROLES.includes(role);
+
 // ─── Generate class code ──────────────────────────────────────
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -15,7 +26,7 @@ function generateCode() {
 // ─── Register ────────────────────────────────────────────────
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role, studentId, department } = req.body;
+    const { name, email, password, role, studentId, department, deviceId } = req.body;
 
     const normalizedEmail = email?.toLowerCase().trim();
     const finalRole = role || 'student';
@@ -45,6 +56,11 @@ exports.register = async (req, res) => {
     // Hash password
     const hashed = await bcrypt.hash(password, 12);
 
+    // Bind the account to the registering device straight away, so the
+    // very first session is already tied to a device rather than binding
+    // on some later login (which could come from someone else's browser).
+    const bindNow = isBindable(finalRole) && Boolean(deviceId);
+
     // Create user
     const user = await User.create({
       name,
@@ -53,11 +69,13 @@ exports.register = async (req, res) => {
       role:       finalRole,
       student_id: finalRole === 'student' ? studentId.trim() : null,
       department,
+      bound_device_id: bindNow ? deviceId : null,
+      device_bound_at: bindNow ? new Date() : null,
     });
 
     // Sign JWT
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: user.role, token_version: user.token_version },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -82,7 +100,7 @@ exports.register = async (req, res) => {
 // ─── Login ───────────────────────────────────────────────────
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceId } = req.body;
 
     // Find user WITH password (we excluded it from default scope)
     const user = await User.scope('withPassword').findOne({
@@ -95,8 +113,35 @@ exports.login = async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json(error('Invalid email or password'));
 
+    // ── Device binding ─────────────────────────────────────────
+    // Runs only AFTER the password check, so it can never be used to
+    // probe which accounts exist or what device an account is bound to.
+    //
+    // Three cases for a bindable (student) account:
+    //   1. No device id sent  → allow, but don't bind. Keeps older clients
+    //      and non-browser tooling working rather than hard-failing.
+    //   2. Account unbound    → bind it to this device now.
+    //   3. Account bound      → must match, otherwise reject.
+    if (isBindable(user.role) && deviceId) {
+      if (!user.bound_device_id) {
+        await user.update({
+          bound_device_id: deviceId,
+          device_bound_at: new Date(),
+        });
+        console.log(`[DeviceBind] bound ${user.email} to device ${deviceId}`);
+      } else if (user.bound_device_id !== deviceId) {
+        console.warn(
+          `[DeviceBind] REJECTED ${user.email} — bound=${user.bound_device_id} attempted=${deviceId}`
+        );
+        return res.status(403).json(error(
+          'This account is registered to a different device. ' +
+          'Please use your original device, or contact your administrator to reset it.'
+        ));
+      }
+    }
+
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: user.role, token_version: user.token_version },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );

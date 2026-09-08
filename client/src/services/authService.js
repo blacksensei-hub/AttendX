@@ -3,17 +3,34 @@
 // Every backend response is shaped as { success, data, message }.
 // We unwrap to res.data.data so callers receive the payload
 // directly without having to dig through the wrapper.
+//
+// Device binding: login and register attach this browser's device id so
+// the backend can lock an account to a single device. The id is read here
+// rather than passed in by callers, so pages calling login(email, password)
+// need no changes — there's also no way for a caller to forget to send it,
+// which would silently bypass the check.
 
-import api from './api';
+import api             from './api';
+import { getDeviceId } from '../lib/deviceId';
 
 export const authService = {
   register: async (data) => {
-    const res = await api.post('/auth/register', data);
+    // Bind the account to this device at signup, so the very first
+    // session is already tied to a device rather than binding on a
+    // later login (which could be from someone else's browser).
+    const res = await api.post('/auth/register', {
+      ...data,
+      deviceId: getDeviceId(),
+    });
     return res.data?.data ?? res.data;
   },
 
   login: async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
+    const res = await api.post('/auth/login', {
+      email,
+      password,
+      deviceId: getDeviceId(),
+    });
     return res.data?.data ?? res.data;
   },
 

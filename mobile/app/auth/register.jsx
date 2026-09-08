@@ -12,6 +12,7 @@ import {
 
 import api                                    from '../../services/api';
 import { useAuthStore }                       from '../../store/authStore';
+import { getDeviceId }                        from '../../src/lib/deviceId';
 
 import { useTheme }                           from '../../src/theme/ThemeProvider';
 import Card                                   from '../../src/components/ui/Card';
@@ -28,8 +29,15 @@ import { DURATION }                           from '../../src/lib/motion';
  * by a friendly "Signing up as Student" notice) since mobile only
  * supports students.
  *
- * Live password strength checklist gives immediate feedback on
- * which requirements are met — matches the web's pattern.
+ * Validation mirrors the server exactly (authController.register):
+ * student id must be 10 digits, password needs 8+ chars with an
+ * uppercase, a number and a special character. Keeping these in step
+ * matters — if the client is laxer than the server, the user gets an
+ * opaque 400 from the API instead of inline guidance.
+ *
+ * Also sends this install's device id so the new account is bound to
+ * this phone from the moment it's created, rather than binding to
+ * whichever browser happens to log in first.
  * ═════════════════════════════════════════════════════════════════
  */
 export default function RegisterScreen() {
@@ -49,15 +57,18 @@ export default function RegisterScreen() {
     setError('');
   };
 
-  // Live password strength checks
+  // Live password strength checks — must match the server's rules
   const checks = [
-    { label: '8+ chars',    pass: form.password.length >= 8          },
-    { label: '1 uppercase', pass: /[A-Z]/.test(form.password)         },
-    { label: '1 number',    pass: /[0-9]/.test(form.password)         },
+    { label: '8+ chars',    pass: form.password.length >= 8            },
+    { label: '1 uppercase', pass: /[A-Z]/.test(form.password)          },
+    { label: '1 number',    pass: /[0-9]/.test(form.password)          },
+    { label: '1 symbol',    pass: /[^A-Za-z0-9]/.test(form.password)   },
   ];
 
   const passwordsMatch = form.confirmPw.length > 0
     && form.password === form.confirmPw;
+
+  const studentIdValid = /^\d{10}$/.test(form.studentId.trim());
 
   const handleRegister = async () => {
     setError('');
@@ -66,8 +77,12 @@ export default function RegisterScreen() {
       setError('Please fill in all required fields');
       return;
     }
+    if (!studentIdValid) {
+      setError('Student ID must be exactly 10 digits');
+      return;
+    }
     if (checks.some(c => !c.pass)) {
-      setError('Password must be 8+ chars, 1 uppercase, 1 number');
+      setError('Password needs 8+ chars, 1 uppercase, 1 number and 1 symbol');
       return;
     }
     if (form.password !== form.confirmPw) {
@@ -77,10 +92,14 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
+      const deviceId = await getDeviceId();
+
       const { data } = await api.post('/auth/register', {
         ...form,
-        name:  form.name.trim(),
-        email: form.email.trim(),
+        name:      form.name.trim(),
+        email:     form.email.trim(),
+        studentId: form.studentId.trim(),
+        deviceId,
       });
       await setAuth(data.user, data.token);
       router.replace('/student');
@@ -184,13 +203,20 @@ export default function RegisterScreen() {
             />
 
             <Input
-              label="Student ID (optional)"
+              label="Student ID"
               icon={Hash}
               value={form.studentId}
-              onChangeText={v => update('studentId', v)}
-              placeholder="10XXXXXX"
-              autoCapitalize="characters"
+              onChangeText={v => update('studentId', v.replace(/\D/g, '').slice(0, 10))}
+              placeholder="10XXXXXXXX"
+              keyboardType="number-pad"
+              maxLength={10}
               mono
+              hint="Helps your lecturer match attendance to your registration"
+              error={
+                form.studentId.length > 0 && !studentIdValid
+                  ? 'Must be exactly 10 digits'
+                  : null
+              }
             />
 
             <View style={{ gap: 8 }}>

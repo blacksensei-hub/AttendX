@@ -15,7 +15,8 @@
           "locationAlwaysAndWhenInUsePermission": "AttendX needs location to verify you are in class."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-secure-store"
     ],
     "android": {
       "package": "com.attendx.app",

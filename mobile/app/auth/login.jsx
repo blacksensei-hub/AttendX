@@ -11,6 +11,7 @@ import {
 
 import api                                    from '../../services/api';
 import { useAuthStore }                       from '../../store/authStore';
+import { getDeviceId }                        from '../../src/lib/deviceId';
 
 import { useTheme }                           from '../../src/theme/ThemeProvider';
 import Card                                   from '../../src/components/ui/Card';
@@ -28,9 +29,10 @@ import { DURATION }                           from '../../src/lib/motion';
  *   • lecturer → /lecturer
  *   • admin    → /auth/use-web (admin tools are web-only)
  *
- * Two demo autofill buttons are exposed so the same APK can be used
- * to demo both the student flow and the lecturer flow without typing
- * credentials each time.
+ * Sends this install's stable device id, which the backend uses to
+ * lock a student account to a single device. Without it, a student
+ * blocked on the web could simply log in here instead — the backend
+ * allows logins that carry no device id so older clients don't break.
  * ═════════════════════════════════════════════════════════════════
  */
 export default function LoginScreen() {
@@ -53,9 +55,14 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      // getDeviceId never throws — it falls back to a session id rather
+      // than blocking sign-in if secure storage is unavailable.
+      const deviceId = await getDeviceId();
+
       const { data } = await api.post('/auth/login', {
         email: email.trim(),
         password,
+        deviceId,
       });
 
       await setAuth(data.user, data.token);
@@ -76,20 +83,6 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Demo autofill helpers — both accounts share the same password
-  // (demo1234) which is set up by the seed script in src/scripts/seed.js
-  const fillDemoStudent = () => {
-    setEmail('student@demo.com');
-    setPassword('demo1234');
-    setError('');
-  };
-
-  const fillDemoLecturer = () => {
-    setEmail('lecturer@demo.com');
-    setPassword('demo1234');
-    setError('');
   };
 
   return (
@@ -160,39 +153,6 @@ export default function LoginScreen() {
               loading={loading}
               fullWidth
               size="lg"
-            />
-          </View>
-        </Card>
-      </Animated.View>
-
-      {/* ── Demo credentials ───────────────────────────── */}
-      <Animated.View entering={FadeInUp.delay(200).duration(DURATION.slow)}>
-        <Card variant="raised" padded>
-          <Text style={{
-            fontFamily:    t.fontFamily.mono,
-            fontSize:      10,
-            color:         t.colors.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: 1,
-            fontWeight:    '700',
-            marginBottom:  t.spacing.sm,
-          }}>
-            Demo credentials · tap to autofill
-          </Text>
-          <View style={{ gap: t.spacing.xs + 2 }}>
-            <Button
-              label="student@demo.com"
-              variant="secondary"
-              size="sm"
-              onPress={fillDemoStudent}
-              fullWidth
-            />
-            <Button
-              label="lecturer@demo.com"
-              variant="secondary"
-              size="sm"
-              onPress={fillDemoLecturer}
-              fullWidth
             />
           </View>
         </Card>

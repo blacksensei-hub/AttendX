@@ -2,6 +2,21 @@ const { Session, Attendance, Enrollment } = require('../models');
 const { validateToken }                   = require('../services/qrService');
 const { isWithinGeofence, isSuspiciousCoordinate } = require('../services/geoService');
 const { success, error }                  = require('../utils/apiResponse');
+const { Op }                              = require('sequelize');
+
+// ─── Proxy-attendance detection threshold ─────────────────────
+// How many DISTINCT students must mark attendance from the same physical
+// device, within the same session, before we flag it to the lecturer.
+//
+// Why device and not IP: an entire class shares one classroom WiFi IP, so
+// "many students from one IP" describes a normal lecture, not fraud. One
+// DEVICE marking several different accounts is the actual proxy signature.
+//
+// 3 is deliberately forgiving — two students genuinely sharing a phone
+// (dead battery, etc.) won't trip it, but a student running through their
+// friends' accounts will. This FLAGS for lecturer review; it never blocks,
+// because this is a heuristic and the lecturer is better placed to judge.
+const PROXY_DEVICE_THRESHOLD = 3;
 
 exports.markAttendance = async (req, res) => {
   const io = req.app.get('io');
@@ -102,13 +117,17 @@ exports.markAttendance = async (req, res) => {
     //    passed silently or returned an error response. Everything after
     //    this point is side effects that enrich the experience but do not
     //    affect the correctness of the attendance record itself.
+    //
+    //    NOTE on ip_address: req.ip is only the REAL client IP when Express
+    //    has `trust proxy` set (see app.js). Behind Railway's proxy without
+    //    it, every row would record the proxy's IP instead.
     const attendance = await Attendance.create({
       session_id:    sessionId,
       student_id:    studentId,
       status,
       geo_lat:       latitude  || null,
       geo_lng:       longitude || null,
-      device_id:     deviceId,
+      device_id:     deviceId || null,
       ip_address:    req.ip,
       is_mock_gps:   false,
       qr_token_used: qrToken,
@@ -147,6 +166,56 @@ exports.markAttendance = async (req, res) => {
       status,
       marked_at:         attendance.marked_at,
     });
+
+    // 11b. Proxy-attendance detection — FLAG, never block.
+    //
+    //      Counts how many DISTINCT students have now marked attendance
+    //      from this same physical device within this same session. One
+    //      student per device is normal; several different accounts from
+    //      one device is the signature of someone marking on behalf of
+    //      their friends.
+    //
+    //      This deliberately does not reject the attendance. The check is
+    //      a heuristic (students do occasionally share a phone for a
+    //      legitimate reason), so the lecturer is shown the evidence and
+    //      decides. Wrapped in try-catch because a detection failure must
+    //      never turn a successfully saved attendance record into an error.
+    if (deviceId) {
+      try {
+        const sameDevice = await Attendance.findAll({
+          where:      { session_id: sessionId, device_id: deviceId },
+          attributes: ['student_id'],
+        });
+
+        const distinctStudentIds = [...new Set(sameDevice.map(r => r.student_id))];
+
+        if (distinctStudentIds.length >= PROXY_DEVICE_THRESHOLD) {
+          const flagged = await User.findAll({
+            where:      { id: { [Op.in]: distinctStudentIds } },
+            attributes: ['id', 'name', 'student_id'],
+          });
+
+          console.warn(
+            `[ProxyFlag] session=${sessionId} device=${deviceId} ` +
+            `students=${distinctStudentIds.length}`
+          );
+
+          io?.to(`session:${sessionId}`).emit('attendance:proxy_flag', {
+            sessionId,
+            deviceId,
+            count:    distinctStudentIds.length,
+            students: flagged.map(u => ({
+              id:                u.id,
+              name:              u.name,
+              studentId_display: u.student_id ?? '',
+            })),
+            detectedAt: new Date().toISOString(),
+          });
+        }
+      } catch (flagErr) {
+        console.warn('Proxy detection failed (non-critical):', flagErr.message);
+      }
+    }
 
     // 12. Create an in-app bell notification for the student.
     //     We wrap this in try-catch because a notification failure must

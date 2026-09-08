@@ -1,25 +1,28 @@
-// server/src/config/socket.js
-const { Server } = require('socket.io');
-const jwt        = require('jsonwebtoken');
+const { Server }  = require('socket.io');
+const jwt         = require('jsonwebtoken');
+
+// Mirrors the allow-list in app.js. A single CLIENT_URL breaks LAN
+// testing: the phone connects from 192.168.x.x while the laptop uses
+// localhost, and only one of them can be the configured origin.
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  ...String(process.env.CLIENT_URLS ?? '')
+    .split(',')
+    .map(o => o.trim()),
+  'http://localhost:5173',
+].filter(Boolean);
 
 function initSocket(httpServer) {
-  const allowedOrigins = [
-    'https://attend-x-iota.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    process.env.CLIENT_URL,
-  ].filter(Boolean);
-
   const io = new Server(httpServer, {
     cors: {
-      origin:      allowedOrigins,
-      methods:     ['GET', 'POST'],
-      credentials: true,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        console.warn(`[Socket CORS] Blocked origin: ${origin}`);
+        return callback(new Error('Not allowed by CORS'));
+      },
+      methods: ['GET', 'POST'],
     },
-    transports:         ['websocket', 'polling'],
-    allowEIO3:          true,
-    pingTimeout:        60000,
-    pingInterval:       25000,
   });
 
   // ─── Auth middleware ─────────────────────────────────────────
@@ -40,6 +43,12 @@ function initSocket(httpServer) {
   io.on('connection', (socket) => {
     console.log(`[Socket] ${socket.user.id} connected (${socket.user.role})`);
 
+    // Each user joins their personal room. Joined FIRST so a
+    // force-logout can reach them even if they never open a session
+    // or class view — a revoked session must be catchable anywhere.
+    socket.join(`user:${socket.user.id}`);
+
+    // Join a session room (lecturer joins to receive updates)
     socket.on('join-session', (sessionId) => {
       socket.join(`session:${sessionId}`);
       console.log(`[Socket] ${socket.user.id} joined session room ${sessionId}`);
@@ -49,6 +58,7 @@ function initSocket(httpServer) {
       socket.leave(`session:${sessionId}`);
     });
 
+    // Join class room (student joins their enrolled classes)
     socket.on('join-class', (classId) => {
       socket.join(`class:${classId}`);
     });
@@ -56,9 +66,6 @@ function initSocket(httpServer) {
     socket.on('disconnect', () => {
       console.log(`[Socket] ${socket.user.id} disconnected`);
     });
-
-    // Each user joins their personal notification room
-    socket.join(`user:${socket.user.id}`);
   });
 
   return io;

@@ -24,10 +24,9 @@ import {
  * input pattern, same hero title treatment, same motion vocabulary.
  *
  * Role selector is the primary first decision — lecturer vs student
- * — and conditionally reveals the Student ID field (required for
- * students; lecturers don't see it at all).
+ * — and conditionally reveals the optional Student ID field.
  *
- * Password has a live checklist (length, uppercase, digit, special)
+ * Password has a live strength indicator (length, uppercase, digit)
  * so users know what zod is validating as they type.
  * ═════════════════════════════════════════════════════════════════
  */
@@ -37,34 +36,14 @@ const schema = z.object({
   email:     z.string().email('Enter a valid email'),
   password:  z.string()
                .min(8, 'Password must be at least 8 characters')
-               .regex(/[A-Z]/,         'Must contain at least one uppercase letter')
-               .regex(/[0-9]/,         'Must contain at least one number')
-               .regex(/[^A-Za-z0-9]/,  'Must contain at least one special character'),
+               .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+               .regex(/[0-9]/, 'Must contain at least one number'),
   confirmPw: z.string(),
   role:      z.enum(['student', 'lecturer']),
   studentId: z.string().optional(),
 }).refine(d => d.password === d.confirmPw, {
   message: 'Passwords do not match',
   path:    ['confirmPw'],
-}).superRefine((d, ctx) => {
-  // Student ID is required for students only — exactly 10 digits.
-  if (d.role !== 'student') return;
-  const id = (d.studentId ?? '').trim();
-  if (id.length === 0) {
-    ctx.addIssue({
-      code:    z.ZodIssueCode.custom,
-      message: 'Student ID is required',
-      path:    ['studentId'],
-    });
-    return;
-  }
-  if (!/^\d{10}$/.test(id)) {
-    ctx.addIssue({
-      code:    z.ZodIssueCode.custom,
-      message: 'Student ID must be exactly 10 digits',
-      path:    ['studentId'],
-    });
-  }
 });
 
 export default function RegisterPage() {
@@ -88,7 +67,6 @@ export default function RegisterPage() {
     { label: '8+ characters',    pass: password.length >= 8 },
     { label: 'One uppercase',    pass: /[A-Z]/.test(password) },
     { label: 'One number',       pass: /[0-9]/.test(password) },
-    { label: 'One special char', pass: /[^A-Za-z0-9]/.test(password) },
   ];
 
   const onSubmit = async (data) => {
@@ -279,7 +257,7 @@ export default function RegisterPage() {
           <input
             {...register('name')}
             type="text"
-            placeholder={role === 'lecturer' ? 'Dr. Kwame Mensah' : 'Kwame Mensah'}
+            placeholder="Dr. Kwame Mensah"
             className="input-base"
             style={{
               paddingLeft: '36px',
@@ -307,7 +285,7 @@ export default function RegisterPage() {
           />
         </Field>
 
-        {/* Student ID — required for students */}
+        {/* Student ID — conditional */}
         <AnimatePresence initial={false}>
           {role === 'student' && (
             <motion.div
@@ -320,21 +298,18 @@ export default function RegisterPage() {
               <Field
                 label="Student ID"
                 icon={Hash}
+                optional
                 hint="Helps your lecturer match attendance to your registration"
-                error={errors.studentId?.message}
               >
                 <input
                   {...register('studentId')}
                   type="text"
-                  inputMode="numeric"
-                  maxLength={10}
-                  placeholder="10XXXXXXXX"
+                  placeholder="10XXXXXX"
                   className="input-base"
                   style={{
                     paddingLeft:   '36px',
                     fontFamily:    'var(--font-mono)',
                     letterSpacing: '0.04em',
-                    borderColor:   errors.studentId ? 'var(--red-border)' : undefined,
                   }}
                 />
               </Field>

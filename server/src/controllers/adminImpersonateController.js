@@ -40,6 +40,11 @@ const { success, error }        = require('../utils/apiResponse');
  *     • the admin can stop impersonating after any duration as long as
  *       their account still exists and is active
  *     • the client never holds two valid tokens at once
+ *
+ * token_version: every token signed here must carry the token_version of
+ * whichever user the token represents, because authenticate.js compares
+ * that claim against the database on every request. Omitting it would
+ * make the token fail verification immediately.
  * ════════════════════════════════════════════════════════════════════
  */
 
@@ -99,10 +104,16 @@ exports.start = async (req, res) => {
     // and role (so all normal controllers behave as if the target user
     // is logged in) plus two extra claims that authenticate.js exposes
     // as req.user.impersonated_by and req.user.impersonation_id.
+    //
+    // token_version is the TARGET's, since the token's `id` is theirs —
+    // that's what authenticate.js will look up. A side effect worth
+    // knowing: resetting that student's device also ends any live
+    // impersonation of them, which is the correct outcome.
     const token = jwt.sign(
       {
         id:               target.id,
         role:             target.role,
+        token_version:    target.token_version,
         impersonated_by:  req.user.id,
         impersonation_id: log.id,
       },
@@ -185,8 +196,9 @@ exports.stop = async (req, res) => {
     }
 
     // Issue a fresh, normal admin token — no impersonated_by claim.
+    // token_version is the admin's own, since this token represents them.
     const token = jwt.sign(
-      { id: admin.id, role: admin.role },
+      { id: admin.id, role: admin.role, token_version: admin.token_version },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -209,7 +221,7 @@ exports.stop = async (req, res) => {
 };
 
 // ─── List impersonation logs ──────────────────────────────────────────
-// Powers the future audit dashboard. Sorted newest-first; capped at 100
+// Powers the audit dashboard. Sorted newest-first; capped at 100
 // rows per request so the payload stays small. Pagination can be added
 // when row count makes it worth the effort.
 exports.listLogs = async (req, res) => {

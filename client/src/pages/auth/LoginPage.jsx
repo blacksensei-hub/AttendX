@@ -13,6 +13,7 @@ import toast                                 from 'react-hot-toast';
 import { useAuthStore }                      from '../../store/authStore';
 import { authService }                       from '../../services/authService';
 import { EASE, DURATION, SPRING, TAP }       from '../../lib/motion';
+import { useLogoutReason }                   from '../../hooks/useLogoutReason';
 
 const schema = z.object({
   email:    z.string().email('Enter a valid email'),
@@ -27,6 +28,12 @@ function roleHome(role) {
 }
 
 export default function LoginPage() {
+  // Surfaces the reason a session was ended (e.g. an admin reset the
+  // account's device), stashed by ForceLogoutListener before it
+  // redirected here. Reads and clears in one go, so refreshing this
+  // page doesn't replay an old message.
+  useLogoutReason();
+
   const navigate  = useNavigate();
   const location  = useLocation();
   const setAuth   = useAuthStore((s) => s.setAuth);
@@ -36,7 +43,6 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm({ resolver: zodResolver(schema) });
 
@@ -54,11 +60,6 @@ export default function LoginPage() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Login failed. Check your credentials.');
     }
-  };
-
-  const fillDemo = (email, password) => {
-    setValue('email',    email,    { shouldValidate: true });
-    setValue('password', password, { shouldValidate: true });
   };
 
   return (
@@ -188,64 +189,6 @@ export default function LoginPage() {
           )}
         </motion.button>
       </form>
-
-      {/* Demo credentials */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25, ...SPRING.gentle }}
-        style={{
-          marginTop: 'var(--space-3)', padding: 'var(--space-3)',
-          background: 'var(--bg-raised)', borderRadius: 'var(--radius-molecular)',
-          position: 'relative', overflow: 'hidden',
-        }}
-      >
-        <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '100px', height: '100px', background: 'var(--brand-subtle)', filter: 'blur(40px)', opacity: 0.5, pointerEvents: 'none' }} />
-
-        <p style={{
-          position: 'relative', color: 'var(--text-muted)', fontSize: '10px',
-          fontFamily: 'var(--font-mono)', fontWeight: 600, marginBottom: '10px',
-          textTransform: 'uppercase', letterSpacing: '0.1em',
-        }}>
-          Demo credentials · click to autofill
-        </p>
-
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {[
-            { role: 'Lecturer', email: 'lecturer@demo.com', pw: 'demo1234' },
-            { role: 'Student',  email: 'student@demo.com',  pw: 'demo1234' },
-          ].map((d) => (
-            <motion.button
-              key={d.role}
-              whileTap={TAP.button}
-              whileHover={{ x: 2 }}
-              transition={SPRING.snappy}
-              type="button"
-              onClick={() => fillDemo(d.email, d.pw)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                gap: '8px', padding: '8px 12px',
-                background: 'var(--bg-card)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-atomic)', cursor: 'pointer',
-                textAlign: 'left', fontFamily: 'var(--font-body)',
-                transition: `border-color ${DURATION.base}ms ${EASE.state}`,
-              }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brand-border)'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-                <span style={{ color: 'var(--brand-text)', fontSize: 'var(--text-xs)', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-                  {d.role}
-                </span>
-                <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {d.email} · {d.pw}
-                </span>
-              </div>
-              <ArrowRight size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-            </motion.button>
-          ))}
-        </div>
-      </motion.div>
 
       {/* Register link */}
       <p style={{ marginTop: 'var(--space-3)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>

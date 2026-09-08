@@ -203,9 +203,11 @@ async function start() {
       startScheduleRunner(io);
     });
 
-  } catch (err) {
-    console.error('❌ Startup failed:', err);
-    process.exit(1);
+    } catch (err) {
+    console.error('❌ Startup failed (continuing anyway for diagnostics):', err);
+    server.listen(PORT, () => {
+      console.log(`🚀 [DIAGNOSTIC MODE] Server running on http://localhost:${PORT}`);
+    });
   }
 }
 

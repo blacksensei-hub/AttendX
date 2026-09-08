@@ -23,6 +23,7 @@ const thresholdRoutes  = require('./routes/thresholds');
 const adjustmentRoutes = require('./routes/adjustments');
 const scheduleRoutes   = require('./routes/schedules');
 const impersonationRoutes = require('./routes/impersonation');
+const debugRoutes = require('./routes/debug');
 
 const app    = express();
 const server = http.createServer(app);
@@ -102,6 +103,7 @@ app.use('/api/schedules',     scheduleRoutes);
 // (usually student/lecturer) — a router-level authorize('admin') would
 // trap admins inside impersonation with no way out. See routes/impersonation.js.
 app.use('/api/impersonation', impersonationRoutes);
+app.use('/api', debugRoutes);
 
 // ─── Health check ─────────────────────────────────────────────
 // Exposed at both paths: /health for platform probes (Railway) and
@@ -135,15 +137,37 @@ async function start() {
     await sequelize.authenticate();
     console.log('✅ Database connected');
 
-    // We deliberately skip sequelize.sync() here.
+    // ─── ONE-TIME SCHEMA BOOTSTRAP ────────────────────────────
     //
-    // Sequelize's alter:true mode generates incorrect ALTER TABLE
-    // statements due to association ordering — it was creating a
-    // foreign key from classes.lecturer_id → appeals instead of
-    // classes.lecturer_id → users. All tables already exist and are
-    // correct, so there is no need to sync on startup. New tables
-    // or columns should be added manually via pgAdmin.
-    console.log('✅ Models ready');
+    //   ⚠️  TEMPORARY — turn this off once the tables exist.
+    //
+    // Set DB_BOOTSTRAP=true in .env, start the server once against the
+    // EMPTY Neon database, watch for "Tables created", then stop the
+    // server and remove DB_BOOTSTRAP (or set it to false).
+    //
+    // Why it's gated behind an env var rather than just being here:
+    // sync() is genuinely dangerous against a populated database. Its
+    // alter mode previously generated incorrect ALTER TABLE statements
+    // on this project — building a foreign key from classes.lecturer_id
+    // to appeals instead of users — which is why it was removed from
+    // startup in the first place. Plain sync() on an EMPTY database is
+    // safe, and is by far the fastest way to create all tables correctly
+    // from the models. On a populated one it is not worth the risk.
+    //
+    // IMPORTANT: run this against Neon's DIRECT connection string, not
+    // the pooled one. Neon's pooler (PgBouncer, transaction mode) does
+    // not reliably support the session-level behaviour that DDL needs.
+    // Switch DATABASE_URL back to the -pooler host for normal running.
+    if (process.env.DB_BOOTSTRAP === 'true') {
+      console.warn('⚠️  DB_BOOTSTRAP is on — creating tables from models…');
+      await sequelize.sync();
+      console.log('✅ Tables created — now remove DB_BOOTSTRAP from .env');
+    } else {
+      // Normal path. Tables already exist and are correct; new tables or
+      // columns are added manually via SQL so we keep full control over
+      // the generated DDL.
+      console.log('✅ Models ready');
+    }
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);

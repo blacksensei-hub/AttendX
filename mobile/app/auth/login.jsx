@@ -63,6 +63,7 @@ export default function LoginScreen() {
         email: email.trim(),
         password,
         deviceId,
+        platform: 'mobile',
       });
 
       await setAuth(data.user, data.token);

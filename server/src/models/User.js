@@ -26,8 +26,22 @@ const User = sequelize.define('User', {
   //
   // Nullable by design: NULL means unbound, which is both the initial
   // state for every account and the state an admin reset returns it to.
-  bound_device_id: { type: DataTypes.STRING(100) },
-  device_bound_at: { type: DataTypes.DATE },
+  // ── Device binding (per platform) ───────────────────────────
+  // Two independent slots rather than one global binding. The actual
+  // threat is a student's mobile device being used by someone else to
+  // mark attendance for them — that's specifically a MOBILE problem.
+  // Being logged into your own laptop browser at the same time is
+  // normal use, not the threat, so it gets its own slot rather than
+  // contending with the mobile one.
+  //
+  // Each is nullable independently: NULL means that platform's slot is
+  // unbound, which is both the initial state and what an admin reset
+  // returns it to — resetting mobile (e.g. "got a new phone") doesn't
+  // need to also sign the student out of their laptop.
+  bound_web_device_id:    { type: DataTypes.STRING(100) },
+  web_device_bound_at:    { type: DataTypes.DATE },
+  bound_mobile_device_id: { type: DataTypes.STRING(100) },
+  mobile_device_bound_at: { type: DataTypes.DATE },
 
   // Incremented to invalidate every token already issued for this user.
   // JWTs can't be un-issued, so the value is embedded at sign time and

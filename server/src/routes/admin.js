@@ -14,7 +14,7 @@ router.get('/stats', (req, res, next) => { res.set('Cache-Control', 'no-store');
 router.get('/users',                  ctrl.getUsers);
 router.put('/users/:id/toggle',       ctrl.toggleUserStatus);
 router.put('/users/:id/role',         ctrl.changeUserRole);
-router.put('/users/:id/reset-device', adminDeviceController.resetUserDevice);
+router.put('/users/:id/reset-device/:platform', adminDeviceController.resetUserDevice);
 router.delete('/users/:id',           ctrl.deleteUser);
 router.get('/classes',                ctrl.getClasses);
 router.get('/sessions/active',        ctrl.getActiveSessions);

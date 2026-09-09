@@ -100,6 +100,7 @@ export default function RegisterScreen() {
         email:     form.email.trim(),
         studentId: form.studentId.trim(),
         deviceId,
+        platform: 'mobile',
       });
       await setAuth(data.user, data.token);
       router.replace('/student');

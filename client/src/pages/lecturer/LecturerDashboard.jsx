@@ -3,13 +3,13 @@ import { useQuery }                    from '@tanstack/react-query';
 import { motion }                      from 'framer-motion';
 import {
   BookOpen, Users, BarChart3, TrendingUp,
-  ArrowUpRight,
+  ArrowUpRight, LineChart as LineChartIcon,
 }                                      from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 }                                      from 'recharts';
-import { format, subDays }             from 'date-fns';
+import { format }                      from 'date-fns';
 import { useNavigate }                 from 'react-router-dom';
 
 import { classService }                from '../../services/classService';
@@ -29,13 +29,18 @@ import {
  * ═════════════════════════════════════════════════════════════════
  * LecturerDashboard — the first surface every lecturer sees.
  *
- * Memoization changes:
- *   • Trend fallback data generated ONCE via useMemo (was being
- *     regenerated with new random values on every render — caused
- *     chart flicker)
+ * Memoization notes:
  *   • Stat cards array memoized so AnimatedList children don't
  *     get fresh object references on unrelated renders
  *   • RecentClassRow wrapped in memo with custom comparator
+ *
+ * The trend chart previously fell back to generateMockTrend() —
+ * randomly generated 65-95% values — whenever the API returned no
+ * trend data. That produced a confident-looking attendance curve on
+ * accounts with zero classes and zero sessions, which is worse than
+ * showing nothing: it invites the reader to trust numbers that were
+ * invented client-side. It now renders an explicit empty state
+ * instead, matching the pattern already used on StudentDashboard.
  * ═════════════════════════════════════════════════════════════════
  */
 export default function LecturerDashboard() {
@@ -49,7 +54,7 @@ export default function LecturerDashboard() {
   });
   const classes = classData?.classes ?? [];
 
-  const { data: stats } = useQuery({
+  const { data: stats, isPending: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn:  () => api.get('/reports/dashboard').then(r => r.data),
   });
@@ -101,13 +106,14 @@ export default function LecturerDashboard() {
     },
   ], [classes.length, totalStudents, activeSessions, avgAttendance]);
 
-  // Trend data — bug fix: was calling generateMockTrend() on every
-  // render, which uses Math.random() so the chart flickered with
-  // new values constantly. Now stable until real stats arrive.
+  // Real data only — no synthetic fallback. A single point can't form
+  // a trend line, so we need at least two before the chart says
+  // anything meaningful.
   const trendData = useMemo(
-    () => stats?.trend ?? generateMockTrend(14),
+    () => (Array.isArray(stats?.trend) ? stats.trend : []),
     [stats?.trend]
   );
+  const hasTrend = trendData.length >= 2;
 
   // Recent classes slice — memoized so RecentClassRow children
   // see stable refs for the iteration.
@@ -200,69 +206,86 @@ export default function LecturerDashboard() {
               Last 14 days across all classes
             </p>
           </div>
-          <StatusPill
-            status="approved"
-            label={`${avgAttendance}% avg`}
-            showSweep={false}
-            icon={TrendingUp}
-            size="md"
-          />
+          {/* Only claim an average once there's real data behind it */}
+          {hasTrend && (
+            <StatusPill
+              status="approved"
+              label={`${avgAttendance}% avg`}
+              showSweep={false}
+              icon={TrendingUp}
+              size="md"
+            />
+          )}
         </div>
 
-        <ResponsiveContainer width="100%" height={240}>
-          <AreaChart
-            data={trendData}
-            margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
-          >
-            <defs>
-              <linearGradient id="dashboardTrendGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="var(--brand)" stopOpacity={0.35} />
-                <stop offset="95%" stopColor="var(--brand)" stopOpacity={0}    />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis
-              dataKey="date"
-              stroke="var(--border)"
-              tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-              tickFormatter={d => format(new Date(d), 'dd MMM')}
-            />
-            <YAxis
-              stroke="var(--border)"
-              tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-              domain={[0, 100]}
-              tickFormatter={v => `${v}%`}
-            />
-            <Tooltip
-              cursor={{ stroke: 'var(--brand)', strokeWidth: 1, strokeDasharray: '3 3' }}
-              contentStyle={{
-                background:    'var(--bg-card)',
-                border:        '1px solid var(--border)',
-                borderRadius:  'var(--radius-atomic)',
-                color:         'var(--text-primary)',
-                fontSize:      'var(--text-sm)',
-                boxShadow:     'var(--shadow-lg)',
-                padding:       '8px 12px',
-              }}
-              formatter={(v) => [`${v}%`, 'Attendance']}
-              labelFormatter={d => format(new Date(d), 'dd MMM yyyy')}
-            />
-            <Area
-              type="monotone"
-              dataKey="rate"
-              stroke="var(--brand)"
-              strokeWidth={2.5}
-              fill="url(#dashboardTrendGradient)"
-              dot={false}
-              activeDot={{
-                r:           5,
-                fill:        'var(--brand)',
-                stroke:      'var(--bg-card)',
-                strokeWidth: 2,
-              }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {hasTrend ? (
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart
+              data={trendData}
+              margin={{ top: 5, right: 5, left: -20, bottom: 5 }}
+            >
+              <defs>
+                <linearGradient id="dashboardTrendGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="var(--brand)" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="var(--brand)" stopOpacity={0}    />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis
+                dataKey="date"
+                stroke="var(--border)"
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                tickFormatter={d => format(new Date(d), 'dd MMM')}
+              />
+              <YAxis
+                stroke="var(--border)"
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                domain={[0, 100]}
+                tickFormatter={v => `${v}%`}
+              />
+              <Tooltip
+                cursor={{ stroke: 'var(--brand)', strokeWidth: 1, strokeDasharray: '3 3' }}
+                contentStyle={{
+                  background:    'var(--bg-card)',
+                  border:        '1px solid var(--border)',
+                  borderRadius:  'var(--radius-atomic)',
+                  color:         'var(--text-primary)',
+                  fontSize:      'var(--text-sm)',
+                  boxShadow:     'var(--shadow-lg)',
+                  padding:       '8px 12px',
+                }}
+                formatter={(v) => [`${v}%`, 'Attendance']}
+                labelFormatter={d => format(new Date(d), 'dd MMM yyyy')}
+              />
+              <Area
+                type="monotone"
+                dataKey="rate"
+                stroke="var(--brand)"
+                strokeWidth={2.5}
+                fill="url(#dashboardTrendGradient)"
+                dot={false}
+                activeDot={{
+                  r:           5,
+                  fill:        'var(--brand)',
+                  stroke:      'var(--bg-card)',
+                  strokeWidth: 2,
+                }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <ChartEmptyState
+            icon={LineChartIcon}
+            title={statsLoading ? 'Loading attendance data…' : 'No attendance data yet'}
+            subtitle={
+              statsLoading
+                ? null
+                : classes.length === 0
+                  ? 'Create a class and hold a session — attendance will start charting here.'
+                  : 'Hold a couple of sessions and the 14-day trend will appear here.'
+            }
+          />
+        )}
       </motion.div>
 
       {/* ── Recent classes ──────────────────────────────────── */}
@@ -325,6 +348,59 @@ export default function LecturerDashboard() {
         </div>
       )}
     </PageShell>
+  );
+}
+
+// ─── Chart empty state ─────────────────────────────────────────
+// Mirrors the pattern used on StudentDashboard so an empty chart
+// reads the same way across the app.
+function ChartEmptyState({ icon: Icon, title, subtitle }) {
+  return (
+    <div style={{
+      height:         '240px',
+      display:        'flex',
+      flexDirection:  'column',
+      alignItems:     'center',
+      justifyContent: 'center',
+      gap:            'var(--space-2)',
+      padding:        'var(--space-3)',
+      borderRadius:   'var(--radius-atomic)',
+      border:         '1px dashed var(--border)',
+      background:     'var(--bg-raised)',
+    }}>
+      <div style={{
+        width:          '40px',
+        height:         '40px',
+        borderRadius:   'var(--radius-atomic)',
+        background:     'var(--brand-subtle)',
+        border:         '1px solid var(--brand-border)',
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'center',
+      }}>
+        <Icon size={18} style={{ color: 'var(--brand-text)' }} strokeWidth={2.2} />
+      </div>
+      <p style={{
+        color:      'var(--text-primary)',
+        fontWeight: 600,
+        fontSize:   'var(--text-sm)',
+        fontFamily: 'var(--font-display)',
+        textAlign:  'center',
+      }}>
+        {title}
+      </p>
+      {subtitle && (
+        <p style={{
+          color:      'var(--text-muted)',
+          fontSize:   'var(--text-xs)',
+          textAlign:  'center',
+          maxWidth:   '300px',
+          lineHeight: 1.5,
+        }}>
+          {subtitle}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -486,11 +562,4 @@ function getGreeting() {
   if (h < 12) return 'morning';
   if (h < 17) return 'afternoon';
   return 'evening';
-}
-
-function generateMockTrend(days) {
-  return Array.from({ length: days }, (_, i) => ({
-    date: subDays(new Date(), days - i - 1).toISOString(),
-    rate: Math.floor(65 + Math.random() * 30),
-  }));
 }

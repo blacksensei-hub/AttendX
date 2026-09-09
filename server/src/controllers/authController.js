@@ -10,25 +10,33 @@ const { success, error } = require('../utils/apiResponse');
 // attendance for them. Binding staff would risk locking an admin out of
 // their own panel with nobody able to reset them.
 //
-// Binding is PER PLATFORM, not global. The actual threat is specifically a
-// mobile device being used by someone else to mark attendance — that's
-// what the mobile slot guards. Being logged into your own laptop browser
-// at the same time is normal use, not the threat, so web gets its own
-// independent slot. A student can legitimately be signed in on both.
+// Binding applies to MOBILE ONLY. Two reasons, and they compound:
 //
-// To apply binding to every role, change isBindable to: () => true
+//   1. Marking attendance only happens in the mobile app — that's where
+//      the QR scanner lives. A student signed into the website on a dozen
+//      machines still can't mark attendance from any of them, so the
+//      website was never the attack surface worth defending.
+//
+//   2. The web device id lives in localStorage, which a user can clear in
+//      seconds, sidestep with an incognito window, or dodge by switching
+//      browsers. It never stopped a determined person; it mostly just
+//      locked out legitimate users moving between their laptop and their
+//      phone's browser. Mobile's SecureStore-backed id is meaningfully
+//      more durable, which is why that's the half worth keeping.
+//
+// Net effect: the dashboard you read is open; the app that marks
+// attendance is locked to one phone.
 const BOUND_ROLES = ['student'];
 const isBindable = (role) => BOUND_ROLES.includes(role);
 
-// Maps a client-declared platform to the pair of columns that track it.
-// Falls back to 'web' for any unrecognised/missing value — the safer
-// default, since web is the lower-durability slot (localStorage clears
-// far more easily than a phone's SecureStore).
-function slotFor(platform) {
-  return platform === 'mobile'
-    ? { idCol: 'bound_mobile_device_id', atCol: 'mobile_device_bound_at', label: 'mobile' }
-    : { idCol: 'bound_web_device_id',    atCol: 'web_device_bound_at',    label: 'web' };
-}
+// Only mobile carries a device binding. Anything else (web, or a client
+// that doesn't declare a platform) is left unbound.
+const isBoundPlatform = (platform) => platform === 'mobile';
+
+const MOBILE_SLOT = {
+  idCol: 'bound_mobile_device_id',
+  atCol: 'mobile_device_bound_at',
+};
 
 // ─── Generate class code ──────────────────────────────────────
 function generateCode() {
@@ -71,13 +79,13 @@ exports.register = async (req, res) => {
     // Hash password
     const hashed = await bcrypt.hash(password, 12);
 
-    // Bind the registering device to its platform slot straight away, so
-    // the very first session is already tied to a device rather than
-    // binding on some later login (which could come from someone else's
-    // browser). Only the slot for the platform that registered gets set —
-    // the other stays open for that same student's other device.
-    const bindNow = isBindable(finalRole) && Boolean(deviceId);
-    const slot = slotFor(platform);
+    // Bind the registering device only when signing up through the mobile
+    // app — that's the platform the binding protects. Registering on the
+    // web leaves the account unbound, and it'll bind on the student's
+    // first mobile sign-in instead.
+    const bindNow = isBindable(finalRole)
+      && isBoundPlatform(platform)
+      && Boolean(deviceId);
 
     // Create user
     const user = await User.create({
@@ -87,7 +95,9 @@ exports.register = async (req, res) => {
       role:       finalRole,
       student_id: finalRole === 'student' ? studentId.trim() : null,
       department,
-      ...(bindNow ? { [slot.idCol]: deviceId, [slot.atCol]: new Date() } : {}),
+      ...(bindNow
+        ? { [MOBILE_SLOT.idCol]: deviceId, [MOBILE_SLOT.atCol]: new Date() }
+        : {}),
     });
 
     // Sign JWT
@@ -130,34 +140,34 @@ exports.login = async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json(error('Invalid email or password'));
 
-    // ── Device binding (per platform) ──────────────────────────
+    // ── Device binding (mobile only) ───────────────────────────
     // Runs only AFTER the password check, so it can never be used to
     // probe which accounts exist or what device an account is bound to.
     //
-    // Each platform has its own independent slot — a student logging in
-    // on the web doesn't affect their mobile binding and vice versa.
-    // Three cases per slot, same as before, just scoped to one platform:
+    // Web sign-ins skip this entirely — students can use the website from
+    // a laptop, a library PC and their phone's browser all at once. Only
+    // the mobile app, where attendance is actually marked, is locked to
+    // one device. Three cases:
     //   1. No device id sent  → allow, but don't bind. Keeps older clients
     //      and non-browser tooling working rather than hard-failing.
-    //   2. That slot unbound  → bind it to this device now.
-    //   3. That slot bound    → must match, otherwise reject.
-    if (isBindable(user.role) && deviceId) {
-      const slot = slotFor(platform);
-      const boundId = user[slot.idCol];
+    //   2. Slot unbound       → bind it to this device now.
+    //   3. Slot bound         → must match, otherwise reject.
+    if (isBindable(user.role) && isBoundPlatform(platform) && deviceId) {
+      const boundId = user[MOBILE_SLOT.idCol];
 
       if (!boundId) {
         await user.update({
-          [slot.idCol]: deviceId,
-          [slot.atCol]: new Date(),
+          [MOBILE_SLOT.idCol]: deviceId,
+          [MOBILE_SLOT.atCol]: new Date(),
         });
-        console.log(`[DeviceBind] bound ${user.email} (${slot.label}) to device ${deviceId}`);
+        console.log(`[DeviceBind] bound ${user.email} (mobile) to device ${deviceId}`);
       } else if (boundId !== deviceId) {
         console.warn(
-          `[DeviceBind] REJECTED ${user.email} (${slot.label}) — bound=${boundId} attempted=${deviceId}`
+          `[DeviceBind] REJECTED ${user.email} (mobile) — bound=${boundId} attempted=${deviceId}`
         );
         return res.status(403).json(error(
-          `This account's ${slot.label} access is registered to a different device. ` +
-          'Please use your original device, or contact your administrator to reset it.'
+          'The AttendX app is registered to a different phone on this account. ' +
+          'Please use your original phone, or contact your administrator to reset it.'
         ));
       }
     }

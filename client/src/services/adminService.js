@@ -34,12 +34,11 @@ const deleteUser = async (userId) => {
 // Clears a student's device lock so their next sign-in registers a new
 // device. Needed when someone legitimately changes phone, reinstalls the
 // app, or clears their browser — otherwise they're locked out for good.
-// Clears one platform's device lock (web or mobile) so the student's next
-// sign-in on that platform registers a new device. Scoped to a single
-// platform — resetting mobile ("got a new phone") doesn't need to also
-// sign the student out of a laptop session that never had a problem.
-const resetUserDevice = async (userId, platform) => {
-  const { data } = await api.put(`/admin/users/${userId}/reset-device/${platform}`);
+// Clears a student's phone registration so their next mobile sign-in
+// registers a new device. Only mobile carries a binding — web sign-ins are
+// unrestricted, since the website can't mark attendance.
+const resetUserDevice = async (userId) => {
+  const { data } = await api.put(`/admin/users/${userId}/reset-device`);
   return unwrap(data);
 };
 

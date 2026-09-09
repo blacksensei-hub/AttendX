@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, UserCheck, UserX, Trash2, Eye, Shield,
   Loader2, ChevronLeft, ChevronRight, AlertTriangle,
-  Smartphone, Monitor,
+  Smartphone,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -39,9 +39,7 @@ export default function AdminUsersPage() {
   const [busyId,  setBusyId]  = useState(null);
   const [confirmDelete,      setConfirmDelete]      = useState(null);
   const [confirmImpersonate, setConfirmImpersonate] = useState(null);
-  // { user, platform: 'web' | 'mobile' } — reset is scoped to one platform
-  // at a time, since the most common reason ("got a new phone") is
-  // specifically the mobile slot and shouldn't also sign out a laptop.
+  // Only mobile carries a binding — web sign-ins are unrestricted.
   const [confirmResetDevice, setConfirmResetDevice] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -102,21 +100,19 @@ export default function AdminUsersPage() {
     finally { setBusyId(null); setConfirmDelete(null); }
   }
 
-  // Clears ONE platform's device lock (web or mobile) so the student's
-  // next sign-in on that platform registers a new device. The other
-  // platform's binding is left untouched — resetting mobile because
-  // someone got a new phone shouldn't also sign them out of a laptop
-  // session that never had a problem.
-  async function handleResetDevice(user, platform) {
+  // Clears a student's phone registration so their next mobile sign-in
+  // registers a new device. Needed whenever someone legitimately changes
+  // phone — without it they're locked out of marking attendance.
+  async function handleResetDevice(user) {
     setBusyId(user.id);
     try {
-      await resetUserDevice(user.id, platform);
-      const idCol = platform === 'mobile' ? 'bound_mobile_device_id' : 'bound_web_device_id';
-      const atCol = platform === 'mobile' ? 'mobile_device_bound_at' : 'web_device_bound_at';
+      await resetUserDevice(user.id);
       setUsers(rows => rows.map(u =>
-        u.id === user.id ? { ...u, [idCol]: null, [atCol]: null } : u
+        u.id === user.id
+          ? { ...u, bound_mobile_device_id: null, mobile_device_bound_at: null }
+          : u
       ));
-      toast.success(`${user.name} can now sign in on ${platform} from a new device`);
+      toast.success(`${user.name} can now sign in on a new phone`);
     } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
     finally { setBusyId(null); setConfirmResetDevice(null); }
   }
@@ -196,7 +192,7 @@ export default function AdminUsersPage() {
               onChangeRole={r => handleChangeRole(user, r)}
               onDelete={() => setConfirmDelete(user)}
               onImpersonate={() => setConfirmImpersonate(user)}
-              onResetDevice={platform => setConfirmResetDevice({ user, platform })}
+              onResetDevice={() => setConfirmResetDevice(user)}
             />
           ))}
         </div>
@@ -218,7 +214,6 @@ export default function AdminUsersPage() {
                 const isSelf  = user.id === currentUser?.id;
                 const isBusy  = busyId === user.id;
                 const canImp  = user.role !== 'admin' && user.is_active && !isSelf;
-                const isWebBound    = Boolean(user.bound_web_device_id);
                 const isMobileBound = Boolean(user.bound_mobile_device_id);
                 return (
                   <tr key={user.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -230,8 +225,7 @@ export default function AdminUsersPage() {
                         <div>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                             {user.name}
-                            {isWebBound && <DeviceLockBadge platform="web" />}
-                            {isMobileBound && <DeviceLockBadge platform="mobile" />}
+                            {isMobileBound && <DeviceLockBadge />}
                           </div>
                           {user.student_id && <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{user.student_id}</div>}
                         </div>
@@ -257,17 +251,11 @@ export default function AdminUsersPage() {
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        {/* Two independent reset buttons — only enabled when that platform actually holds a binding */}
-                        <IconBtn
-                          disabled={!isWebBound || isBusy}
-                          onClick={() => setConfirmResetDevice({ user, platform: 'web' })}
-                          title={isWebBound ? 'Reset web device lock' : 'No web device registered'}
-                          icon={Monitor}
-                        />
+                        {/* Only meaningful for accounts with a phone registered */}
                         <IconBtn
                           disabled={!isMobileBound || isBusy}
-                          onClick={() => setConfirmResetDevice({ user, platform: 'mobile' })}
-                          title={isMobileBound ? 'Reset mobile device lock' : 'No mobile device registered'}
+                          onClick={() => setConfirmResetDevice(user)}
+                          title={isMobileBound ? 'Reset phone registration' : 'No phone registered'}
                           icon={Smartphone}
                         />
                         <IconBtn disabled={!canImp || isBusy} onClick={() => setConfirmImpersonate(user)} title={canImp ? 'View as' : 'Cannot impersonate'} icon={Eye} />
@@ -312,20 +300,17 @@ export default function AdminUsersPage() {
       <AnimatePresence>
         {confirmResetDevice && (
           <ConfirmModal
-            icon={confirmResetDevice.platform === 'mobile' ? <Smartphone size={22} /> : <Monitor size={22} />}
-            tone="brand"
-            title={`Reset ${confirmResetDevice.platform} device lock?`}
+            icon={<Smartphone size={22} />} tone="brand"
+            title="Reset phone registration?"
             message={<>
-              <strong>{confirmResetDevice.user.name}</strong>'s {confirmResetDevice.platform} access is currently
-              locked to one device. Resetting lets them sign in on {confirmResetDevice.platform} from a new
-              {confirmResetDevice.platform === 'mobile' ? ' phone' : ' browser'} — whichever device they use
-              next becomes their registered one. Their {confirmResetDevice.platform === 'mobile' ? 'web' : 'mobile'}{' '}
-              access is unaffected.
+              <strong>{confirmResetDevice.name}</strong>'s AttendX app is currently registered to
+              one phone. Resetting lets them sign in on a new device — whichever phone they use
+              next becomes their registered one. Website access is unaffected.
             </>}
-            confirmLabel={`Reset ${confirmResetDevice.platform}`}
-            onConfirm={() => handleResetDevice(confirmResetDevice.user, confirmResetDevice.platform)}
+            confirmLabel="Reset phone"
+            onConfirm={() => handleResetDevice(confirmResetDevice)}
             onCancel={() => setConfirmResetDevice(null)}
-            loading={busyId === confirmResetDevice.user.id}
+            loading={busyId === confirmResetDevice.id}
           />
         )}
       </AnimatePresence>
@@ -346,11 +331,10 @@ export default function AdminUsersPage() {
 }
 
 // ─── Device lock badge ────────────────────────────────────────
-function DeviceLockBadge({ platform }) {
-  const Icon = platform === 'mobile' ? Smartphone : Monitor;
+function DeviceLockBadge() {
   return (
     <span
-      title={`${platform === 'mobile' ? 'Mobile' : 'Web'} access locked to one device`}
+      title="AttendX app registered to one phone"
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 3,
         padding: '1px 7px', borderRadius: 99,
@@ -360,8 +344,8 @@ function DeviceLockBadge({ platform }) {
         border: '1px solid var(--brand-border)',
       }}
     >
-      <Icon size={9} />
-      {platform === 'mobile' ? 'Mobile' : 'Web'}
+      <Smartphone size={9} />
+      Phone
     </span>
   );
 }
@@ -369,7 +353,6 @@ function DeviceLockBadge({ platform }) {
 // ─── Mobile user card ─────────────────────────────────────────
 function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onImpersonate, onResetDevice }) {
   const canImp = user.role !== 'admin' && user.is_active && !isSelf;
-  const isWebBound    = Boolean(user.bound_web_device_id);
   const isMobileBound = Boolean(user.bound_mobile_device_id);
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-molecular)', padding: 'var(--space-3)' }}>
@@ -381,8 +364,7 @@ function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onIm
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
-            {isWebBound && <DeviceLockBadge platform="web" />}
-            {isMobileBound && <DeviceLockBadge platform="mobile" />}
+            {isMobileBound && <DeviceLockBadge />}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
           {user.student_id && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{user.student_id}</div>}
@@ -406,8 +388,7 @@ function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onIm
         </select>
 
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <IconBtn disabled={!isWebBound || isBusy} onClick={() => onResetDevice('web')} title={isWebBound ? 'Reset web lock' : 'No web device'} icon={Monitor} />
-          <IconBtn disabled={!isMobileBound || isBusy} onClick={() => onResetDevice('mobile')} title={isMobileBound ? 'Reset mobile lock' : 'No mobile device'} icon={Smartphone} />
+          <IconBtn disabled={!isMobileBound || isBusy} onClick={onResetDevice} title={isMobileBound ? 'Reset phone' : 'No phone registered'} icon={Smartphone} />
           <IconBtn disabled={!canImp || isBusy} onClick={onImpersonate} title={canImp ? 'View as' : 'Cannot'} icon={Eye} />
           <IconBtn disabled={isSelf || isBusy} onClick={onToggle} title={user.is_active ? 'Deactivate' : 'Activate'} icon={user.is_active ? UserX : UserCheck} />
           <IconBtn disabled={isSelf || isBusy} onClick={onDelete} title="Delete" icon={Trash2} danger />

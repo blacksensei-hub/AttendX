@@ -61,22 +61,60 @@ function SidebarContent({ collapsed, onToggleCollapse, onClose, isMobile, navIte
               transition={{ duration: DURATION.fast, ease: EASE.state }}
               style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}
             >
+              {/* Full lockup. The asset carries a white background and
+                  its own wordmark, so it goes on a white plate and the
+                  separate "AttendX" text label is dropped — otherwise the
+                  name would appear twice side by side. */}
               <div style={{
-                width: '32px', height: '32px',
-                background: 'var(--brand)', borderRadius: 'var(--radius-atomic)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontFamily: 'var(--font-display)',
-                fontWeight: 700, fontSize: 'var(--text-sm)',
-                boxShadow: 'var(--shadow-brand)', flexShrink: 0,
-              }}>A</div>
-              <span style={{
-                fontFamily: 'var(--font-display)', fontWeight: 600,
-                fontSize: 'var(--text-md)', color: 'var(--text-primary)',
-                letterSpacing: '-0.01em', whiteSpace: 'nowrap',
-              }}>AttendX</span>
+                background:     '#ffffff',
+                borderRadius:   'var(--radius-atomic)',
+                padding:        '6px 10px',
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'center',
+                minWidth:       0,
+                flexShrink:     1,
+              }}>
+                <img
+                  src="/logo-full.png"
+                  alt="AttendX"
+                  style={{
+                    display:   'block',
+                    height:    '30px',
+                    width:     'auto',
+                    maxWidth:  '100%',
+                    objectFit: 'contain',
+                  }}
+                />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Collapsed: show just the icon, centred, so the rail still
+            carries the brand rather than sitting empty. */}
+        {collapsed && !isMobile && (
+          <div style={{
+            background:     '#ffffff',
+            borderRadius:   'var(--radius-atomic)',
+            padding:        '4px 6px',
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'center',
+            maxWidth:       '56px',
+          }}>
+            <img
+              src="/logo-full.png"
+              alt="AttendX"
+              style={{
+                display:   'block',
+                width:     '100%',
+                height:    'auto',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
+        )}
 
         {/* Mobile: X close button. Desktop: collapse toggle */}
         {isMobile ? (
@@ -105,6 +143,13 @@ function SidebarContent({ collapsed, onToggleCollapse, onClose, isMobile, navIte
               background: 'transparent', border: 'none', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: 'var(--text-muted)', flexShrink: 0,
+              // Collapsed rail is 72px wide and already holds the logo —
+              // absolutely position the toggle so the two don't fight for
+              // horizontal space and push the rail's content off-centre.
+              position: collapsed ? 'absolute' : 'static',
+              bottom:   collapsed ? '-14px'    : 'auto',
+              right:    collapsed ? '20px'     : 'auto',
+              opacity:  collapsed ? 0.6        : 1,
             }}
           >
             <AnimatePresence mode="wait" initial={false}>
@@ -237,6 +282,10 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
                 left:            0,
                 height:          '100dvh',
                 width:           SIDEBAR_WIDTH_EXPANDED,
+                // Never let the drawer exceed the screen on very narrow
+                // phones — 240px is wider than some small-device viewports
+                // once system chrome is accounted for.
+                maxWidth:        '85vw',
                 zIndex:          50,
                 display:         'flex',
                 flexDirection:   'column',

@@ -226,6 +226,21 @@
   html, body {
     margin:  0;
     padding: 0;
+    /* Without an explicit width the document can size to its content
+       rather than the viewport. Combined with #root below, this is what
+       stops the app rendering as a narrow column on phones (the bug that
+       made everything look zoomed-in and required pinch-zooming out). */
+    width:   100%;
+  }
+
+  /* Vite's template leaves #root completely unstyled, so it has no
+     width of its own. AppLayout inside it is a flex container, which
+     sizes to its content when unconstrained — the two together let the
+     whole app collapse narrower than the screen. Pinning #root to the
+     full viewport gives everything below it a width to fill. */
+  #root {
+    width:      100%;
+    min-height: 100dvh;
   }
 
   body {
@@ -236,6 +251,10 @@
     line-height:       var(--leading-base);
     letter-spacing:    0.01em;
     min-height:        100dvh;
+    /* Belt and braces against horizontal scroll: nothing in the app
+       should exceed the viewport, but a stray wide element shouldn't be
+       able to drag the whole page sideways if one slips in. */
+    overflow-x:        hidden;
     -webkit-font-smoothing:  antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering:          optimizeLegibility;
@@ -648,17 +667,23 @@
     grid-template-columns: 1fr !important;
   }
 
-  /* Tables that overflow → horizontal scroll */
+  /* Tables that overflow → horizontal scroll.
+     max-width keeps the scroll contained to the table itself rather
+     than letting a wide table stretch its parent. */
   table {
     display:                  block;
+    max-width:                100%;
     overflow-x:               auto;
     -webkit-overflow-scrolling: touch;
     white-space:              nowrap;
   }
 
-  /* Make modals/overlays full-width on mobile */
+  /* Make modals/overlays full-width on mobile.
+     Uses 100% rather than 100vw: vw includes the scrollbar width, so
+     100vw is wider than the visible area whenever a scrollbar is
+     present, which pushed these a few px past the screen edge. */
   [style*="max-width: 440px"] {
-    max-width: calc(100vw - 32px) !important;
+    max-width: calc(100% - 32px) !important;
   }
 
   /* Heatmap layout → stack map over sidebar */
@@ -669,22 +694,31 @@
 
 /* ─── Touch targets ─────────────────────────────────────────── */
 @media (pointer: coarse) {
-  /* Ensure all interactive elements are at least 44×44px */
+  /*
+    Interactive elements get a comfortable tap height. Height only —
+    NOT min-width.
+
+    A blanket `min-width: 44px` here was inflating every compact
+    control in the app: the five icon buttons in an admin table row
+    (34px each by design) became 44px each, quick-action rows widened,
+    pagination stretched. The previous escape hatch only exempted
+    elements carrying an aria-label, which most of these don't — they
+    use `title` instead — so it rescued almost nothing.
+
+    Height alone gets the accessibility benefit without letting rows of
+    controls drag their containers wider than the screen.
+  */
   button,
   [role="button"],
-  a,
   select,
   input[type="checkbox"],
   input[type="radio"] {
     min-height: 44px;
-    min-width:  44px;
   }
 
-  /* Relax that min-width for icon-only buttons that have fixed sizes */
-  button[aria-label],
-  [role="button"][aria-label] {
-    min-width: unset;
-  }
+  /* Inline links sit inside sentences — forcing a min-height on them
+     breaks text flow, so they're deliberately excluded above. Standalone
+     link-buttons should carry role="button" to opt into the sizing. */
 }
 
 /* ─── Tablet (768px – 1023px) ───────────────────────────────── */

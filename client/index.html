@@ -2,13 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PNG rather than the old favicon.svg. Browsers scale this down for
+         the tab icon; if it ever looks soft at 16px, a purpose-made 32px
+         PNG (or an SVG version of the mark) would sharpen it up. -->
+    <link rel="icon" type="image/png" href="/logo-full.png" />
+    <link rel="apple-touch-icon" href="/logo-full.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0a14" />
+    <meta name="description" content="AttendX — QR-based class attendance management for GCTU." />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     />
-    <title>client</title>
+    <title>AttendX — Class Attendance</title>
   </head>
   <body>
     <div id="root"></div>

@@ -63,20 +63,16 @@ export default function ScanScreen() {
   // React Native's New Architecture (the only mode Expo Go supports from
   // SDK 52+) — see https://github.com/expo/expo/issues/31597. Forcing a
   // fresh CameraView instance (via a changing `key`) every time this
-  // screen regains focus works around it regardless of the exact trigger.
+  // screen regains focus is kept as a defensive remount: it did not fix
+  // the black preview (that issue is upstream and cosmetic — scanning
+  // and attendance-marking work regardless), but it costs nothing and
+  // guards against genuine stale-preview cases on remount.
   const [cameraKey, setCameraKey] = useState(0);
   useFocusEffect(
     useCallback(() => {
-      // TEMP DIAGNOSTIC — remove after black-preview investigation
-      setCameraKey((k) => {
-        console.log('[scan-debug] focus effect fired, cameraKey', k, '->', k + 1);
-        return k + 1;
-      });
+      setCameraKey((k) => k + 1);
     }, [])
   );
-
-  // TEMP DIAGNOSTIC — remove after black-preview investigation
-  console.log('[scan-debug] render, permission granted=', permission?.granted, 'cameraKey=', cameraKey);
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
@@ -113,17 +109,17 @@ export default function ScanScreen() {
       setMessage(data.message || 'Attendance marked');
       Vibration.vibrate([0, 100, 50, 100]);
 
-      setTimeout(() => router.replace('/student'), 2500);
+      setTimeout(() => router.replace('/student'), 6000);
     } catch (err) {
       setResult('error');
       setMessage(err.response?.data?.message || 'Failed to mark attendance');
 
-      // Reset for retry after 3s
+      // Reset for retry after 6s
       setTimeout(() => {
         hasScanned.current = false;
         setResult(null);
         setMessage('');
-      }, 3000);
+      }, 6000);
     } finally {
       setProcessing(false);
     }
@@ -182,9 +178,6 @@ export default function ScanScreen() {
         key={cameraKey}
         style={StyleSheet.absoluteFillObject}
         facing="back"
-        // TEMP DIAGNOSTIC — remove after black-preview investigation
-        onCameraReady={() => console.log('[scan-debug] onCameraReady fired, cameraKey=', cameraKey)}
-        onMountError={(e) => console.log('[scan-debug] onMountError', e)}
         onBarcodeScanned={!processing && !result ? handleScan : undefined}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
       />

@@ -128,6 +128,7 @@ export default function GeofencePicker({ value, onChange }) {
   const watchTimeoutRef  = useRef(null);
   const searchTimeoutRef = useRef(null);
   const searchAbortRef   = useRef(null);
+  const searchWrapRef    = useRef(null);
 
   // ── Default centre: Accra, Ghana ─────────────────────────────
   const DEFAULT_CENTER = [5.6037, -0.1870];
@@ -314,6 +315,21 @@ export default function GeofencePicker({ value, onChange }) {
     setShowResults(false);
   };
 
+  // Close the results dropdown on an outside click — previously it only
+  // closed on select/clear, so clicking "Use my location" or elsewhere on
+  // the form while results were open left it floating on top of that
+  // content instead of dismissing.
+  useEffect(() => {
+    if (!showResults) return;
+    const handleClickOutside = (e) => {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showResults]);
+
   // ── Clear geofence entirely ─────────────────────────────────
   const handleClear = () => {
     stopWatching();
@@ -339,7 +355,7 @@ export default function GeofencePicker({ value, onChange }) {
     }}>
 
       {/* ── Address search bar ──────────────────────────────── */}
-      <div style={{ position: 'relative' }}>
+      <div ref={searchWrapRef} style={{ position: 'relative' }}>
         <Search
           size={14}
           style={{
@@ -426,7 +442,12 @@ export default function GeofencePicker({ value, onChange }) {
                 border:        '1px solid var(--border)',
                 borderRadius:  'var(--radius-molecular)',
                 boxShadow:     'var(--shadow-lg)',
-                zIndex:        10,
+                // Well above every other z-index used in this picker/modal
+                // (the map's "Refining" badge below is 500, the parent
+                // modal's sticky header is 2) so the dropdown always
+                // renders on top of the button row, map, and radius slider
+                // beneath it, regardless of which of those is active.
+                zIndex:        1000,
                 overflow:      'hidden',
                 maxHeight:     '280px',
                 overflowY:     'auto',

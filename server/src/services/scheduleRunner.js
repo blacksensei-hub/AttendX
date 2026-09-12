@@ -87,16 +87,22 @@ async function openScheduledSession(sched, io) {
       include: [{ model: User, as: 'student', attributes: ['name', 'email'] }],
     });
 
-    enrollments.forEach(e => {
-      sendSessionOpenedEmail({
-        to:           e.student?.email,
-        studentName:  e.student?.name,
-        className:    sched.class?.name,
-        sessionTitle: session.title,
-      }).catch(err =>
-        console.error(`[Email] Scheduled open error for ${e.student?.email}:`, err.message)
-      );
-    });
+    // Guarded so an unavailable email service can't abort the loop and skip
+    // the confirmation log — the session is already open at this point.
+    try {
+      enrollments.forEach(e => {
+        sendSessionOpenedEmail({
+          to:           e.student?.email,
+          studentName:  e.student?.name,
+          className:    sched.class?.name,
+          sessionTitle: session.title,
+        }).catch(err =>
+          console.error(`[Email] Scheduled open error for ${e.student?.email}:`, err.message)
+        );
+      });
+    } catch (err) {
+      console.warn('[ScheduleRunner] Opened email batch skipped:', err.message);
+    }
 
     console.log(`[ScheduleRunner] Opened scheduled session for "${sched.class?.name}" (${enrollments.length} students notified)`);
   } catch (err) {

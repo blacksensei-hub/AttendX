@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef }            from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Vibration,
 }                                                 from 'react-native';
 import { CameraView, useCameraPermissions }       from 'expo-camera';
 import * as Location                              from 'expo-location';
-import { router, useLocalSearchParams }           from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Animated, {
   useSharedValue, useAnimatedStyle,
   withRepeat, withSequence, withTiming,
@@ -58,6 +58,25 @@ export default function ScanScreen() {
   const [result,     setResult]     = useState(null);  // 'success' | 'error'
   const [message,    setMessage]    = useState('');
   const hasScanned = useRef(false);
+
+  // expo-camera's native preview can come back black on remount under
+  // React Native's New Architecture (the only mode Expo Go supports from
+  // SDK 52+) — see https://github.com/expo/expo/issues/31597. Forcing a
+  // fresh CameraView instance (via a changing `key`) every time this
+  // screen regains focus works around it regardless of the exact trigger.
+  const [cameraKey, setCameraKey] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      // TEMP DIAGNOSTIC — remove after black-preview investigation
+      setCameraKey((k) => {
+        console.log('[scan-debug] focus effect fired, cameraKey', k, '->', k + 1);
+        return k + 1;
+      });
+    }, [])
+  );
+
+  // TEMP DIAGNOSTIC — remove after black-preview investigation
+  console.log('[scan-debug] render, permission granted=', permission?.granted, 'cameraKey=', cameraKey);
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
@@ -160,8 +179,12 @@ export default function ScanScreen() {
   return (
     <View style={s.container}>
       <CameraView
+        key={cameraKey}
         style={StyleSheet.absoluteFillObject}
         facing="back"
+        // TEMP DIAGNOSTIC — remove after black-preview investigation
+        onCameraReady={() => console.log('[scan-debug] onCameraReady fired, cameraKey=', cameraKey)}
+        onMountError={(e) => console.log('[scan-debug] onMountError', e)}
         onBarcodeScanned={!processing && !result ? handleScan : undefined}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
       />

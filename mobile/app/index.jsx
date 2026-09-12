@@ -1,10 +1,9 @@
 import { useEffect, useState }           from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
 import { router }                        from 'expo-router';
 
 import { useAuthStore }                  from '../store/authStore';
 import api                               from '../services/api';
-import { useTheme }                      from '../src/theme/ThemeProvider';
+import SplashScreen                      from '../src/components/SplashScreen';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -23,7 +22,6 @@ import { useTheme }                      from '../src/theme/ThemeProvider';
  * ═════════════════════════════════════════════════════════════════
  */
 export default function Index() {
-  const t                       = useTheme();
   const loadToken               = useAuthStore(s => s.loadToken);
   const setAuth                 = useAuthStore(s => s.setAuth);
   const logout                  = useAuthStore(s => s.logout);
@@ -72,50 +70,5 @@ export default function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <View style={{
-      flex:            1,
-      backgroundColor: t.colors.bg,
-      alignItems:      'center',
-      justifyContent:  'center',
-      gap:             t.spacing.md,
-    }}>
-      {/* Brand mark */}
-      <View style={{
-        width:           72,
-        height:          72,
-        borderRadius:    t.radius.molecular,
-        backgroundColor: t.colors.brand,
-        alignItems:      'center',
-        justifyContent:  'center',
-        ...t.shadow.brand,
-      }}>
-        <Text style={{
-          fontFamily: t.fontFamily.displayBold,
-          fontSize:   t.fontSize.xxl,
-          color:      '#fff',
-          lineHeight: t.fontSize.xxl,
-        }}>
-          A
-        </Text>
-      </View>
-
-      <Text style={{
-        fontFamily:    t.fontFamily.displayBold,
-        fontSize:      t.fontSize.xl,
-        color:         t.colors.textPrimary,
-        letterSpacing: t.letterSpacing.tight,
-      }}>
-        AttendX
-      </Text>
-
-      {checking && (
-        <ActivityIndicator
-          size="small"
-          color={t.colors.textMuted}
-          style={{ marginTop: t.spacing.xs }}
-        />
-      )}
-    </View>
-  );
+  return <SplashScreen />;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef }                 from 'react';
+import { useEffect, useRef, useState }       from 'react';
 import { useForm }                           from 'react-hook-form';
 import { zodResolver }                       from '@hookform/resolvers/zod';
 import { z }                                 from 'zod';
@@ -22,30 +22,43 @@ import {
  * ranges the backend accepts (late threshold 1-60, QR interval 3-60,
  * auto-close 5-180).
  *
- * Minimal cognitive load — only 4 inputs, 3 of them optional.
- * Sensible defaults (late after 15min, QR rotates every 5s).
+ * Minimal cognitive load — only 4 inputs. Late threshold and QR
+ * interval must be chosen explicitly (no pre-filled default the
+ * lecturer might not notice); auto-close is the only genuinely
+ * optional field and can be left blank to close manually.
  * ═════════════════════════════════════════════════════════════════
  */
 
+// Empty-string inputs (a cleared <input type="number">) must become
+// `undefined`, not be coerced to 0 — otherwise a blank "optional"
+// field fails its own .min() check, and a blank required field shows
+// a confusing NaN-flavoured error instead of a clean "Required".
+const blankToNumber = (val) => {
+  if (val === '' || val === undefined || val === null) return undefined;
+  const n = Number(val);
+  return Number.isNaN(n) ? undefined : n;
+};
+
 const schema = z.object({
   title:          z.string().optional(),
-  late_threshold: z.coerce.number().min(1).max(60).default(15),
-  qr_interval:    z.coerce.number().min(3).max(60).default(5),
-  close_after:    z.coerce.number().min(5).max(180).optional(),
+  late_threshold: z.preprocess(blankToNumber, z.number({ required_error: 'Required' }).min(1).max(60)),
+  qr_interval:    z.preprocess(blankToNumber, z.number({ required_error: 'Required' }).min(3).max(60)),
+  close_after:    z.preprocess(blankToNumber, z.number().min(5).max(180).optional()),
 });
 
 export default function OpenSessionModal({ classData, open, onClose, onOpened }) {
   const overlayRef = useRef(null);
+  const [isSlow, setIsSlow] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: {
-      late_threshold: 15,
-      qr_interval:    5,
-    },
   });
 
   const mutation = useMutation({
     mutationFn: (data) => sessionService.openSession(classData.id, data),
+    // Reset the "slow" flag at the moment a new attempt starts (rather
+    // than reactively in an effect keyed on isPending) so a retry after
+    // a previous slow/failed open doesn't inherit its stale state.
+    onMutate:   () => setIsSlow(false),
     onSuccess:  (data) => {
       toast.success('Session opened · students can mark attendance now');
       onOpened(data.session);
@@ -53,6 +66,15 @@ export default function OpenSessionModal({ classData, open, onClose, onOpened })
     onError: (err) =>
       toast.error(err.response?.data?.message || 'Failed to open session'),
   });
+
+  // Opening a session can take a while on a cold-started backend —
+  // surface that to the lecturer instead of leaving the button in a
+  // silent pending state for up to a minute.
+  useEffect(() => {
+    if (!mutation.isPending) return;
+    const timer = setTimeout(() => setIsSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [mutation.isPending]);
 
   // ── Escape key closes ────────────────────────────────────────
   useEffect(() => {
@@ -238,6 +260,7 @@ export default function OpenSessionModal({ classData, open, onClose, onOpened })
                     type="number"
                     min="1"
                     max="60"
+                    placeholder="e.g. 15"
                     className="input-base"
                   />
                 </Field>
@@ -252,6 +275,7 @@ export default function OpenSessionModal({ classData, open, onClose, onOpened })
                     type="number"
                     min="3"
                     max="60"
+                    placeholder="e.g. 5"
                     className="input-base"
                   />
                 </Field>
@@ -304,7 +328,9 @@ export default function OpenSessionModal({ classData, open, onClose, onOpened })
                   }}
                 >
                   <Radio size={15} />
-                  {mutation.isPending ? 'Opening…' : 'Open session'}
+                  {mutation.isPending
+                    ? (isSlow ? 'Waking up server…' : 'Opening…')
+                    : 'Open session'}
                 </motion.button>
               </div>
             </form>

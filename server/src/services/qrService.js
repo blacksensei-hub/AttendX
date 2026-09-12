@@ -36,10 +36,23 @@ async function generateToken(sessionId, intervalSeconds = 5) {
 async function validateToken(token, sessionId) {
   const qr = await QRToken.findOne({ where: { token } });
 
-  if (!qr)                              return { valid: false, reason: 'QR code not recognised' };
-  if (qr.session_id !== sessionId)      return { valid: false, reason: 'QR code is for a different session' };
-  if (qr.used)                          return { valid: false, reason: 'QR code has already been used' };
-  if (new Date() > new Date(qr.expires_at)) return { valid: false, reason: 'QR code has expired — scan the new one' };
+  if (!qr)                         return { valid: false, reason: 'QR code not recognised' };
+  if (qr.session_id !== sessionId) return { valid: false, reason: 'QR code is for a different session' };
+  if (qr.used)                     return { valid: false, reason: 'QR code has already been used' };
+
+  const now = new Date();
+  const expiresAt = new Date(qr.expires_at);
+  if (now > expiresAt) {
+    // expiredMsAgo lets the caller log how far past expiry the token
+    // already was by the time this query ran — distinguishing a
+    // genuinely late scan from one where server-side latency (a cold
+    // DB connection acquire, a cold-started process) ate the window.
+    return {
+      valid: false,
+      reason: 'QR code has expired — scan the new one',
+      expiredMsAgo: now.getTime() - expiresAt.getTime(),
+    };
+  }
 
   return { valid: true, qr };
 }

@@ -20,6 +20,11 @@ const PROXY_DEVICE_THRESHOLD = 3;
 
 exports.markAttendance = async (req, res) => {
   const io = req.app.get('io');
+  // Marks when Express started handling this request — used below to
+  // measure how much server-side time (DB queries, connection acquire)
+  // elapsed before a QR token was found expired, so a genuinely-late
+  // scan can be told apart from one delayed by backend latency.
+  const requestStart = Date.now();
   try {
     const { sessionId, qrToken, latitude, longitude, deviceId, isMockGps } = req.body;
     const studentId = req.user.id;
@@ -60,8 +65,21 @@ exports.markAttendance = async (req, res) => {
     //    This is the core anti-proxy mechanism — a screenshot of an
     //    old token will fail here because tokens expire every few seconds.
     const qrResult = await validateToken(qrToken, sessionId);
-    if (!qrResult.valid)
+    if (!qrResult.valid) {
+      if (qrResult.expiredMsAgo !== undefined) {
+        // Both look identical to the student ("expired") but they have
+        // different causes: expiredMsAgo close to 0 means the token was
+        // only just stale (likely a genuinely late scan); a large
+        // serverProcessingMs relative to expiredMsAgo points at backend
+        // latency (cold DB connection acquire, cold start) eating the
+        // token's window before this request could even be processed.
+        console.warn(
+          `[QR expired] session=${sessionId} expiredMsAgo=${qrResult.expiredMsAgo}ms ` +
+          `serverProcessingMs=${Date.now() - requestStart}ms`
+        );
+      }
       return res.status(400).json(error(qrResult.reason));
+    }
 
     // 5. Reject mock GPS.
     //    On Android, expo-location sets loc.mocked = true when a GPS

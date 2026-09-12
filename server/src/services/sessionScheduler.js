@@ -70,16 +70,23 @@ async function runScheduler(io) {
         }
       }
 
-      // Send closing soon emails — fire and forget
-      Promise.allSettled(
-        enrollments
-          .filter(e => e.student)
-          .map(e => sendSessionClosingSoonEmail({
-            to:          e.student.email,
-            studentName: e.student.name,
-            className,
-          }))
-      ).catch(err => console.error('[Scheduler] Closing soon email error:', err.message));
+      // Send closing soon emails — fire and forget.
+      // Wrapped because a synchronous throw while building the batch would
+      // escape to the top-level catch and abort the rest of this poll cycle,
+      // starving every other session of its warning and auto-close.
+      try {
+        Promise.allSettled(
+          enrollments
+            .filter(e => e.student)
+            .map(e => sendSessionClosingSoonEmail({
+              to:          e.student.email,
+              studentName: e.student.name,
+              className,
+            }))
+        ).catch(err => console.error('[Scheduler] Closing soon email error:', err.message));
+      } catch (err) {
+        console.warn('[Scheduler] Closing soon email skipped:', err.message);
+      }
     }
 
     // ── Find sessions to auto-close (close_at has passed) ─────
@@ -125,16 +132,23 @@ async function runScheduler(io) {
           status:       statusMap[e.student.id] ?? 'absent',
         }));
 
-      // Send session closed summary emails — fire and forget
+      // Send session closed summary emails — fire and forget.
+      // Guarded for the same reason as the closing-soon batch above: the
+      // session is already closed in the database, and an email problem must
+      // not abort the loop over the remaining sessions.
       if (records.length > 0) {
-        sendSessionClosedEmails({
-          className,
-          sessionTitle: session.title,
-          closedAt:     now.toISOString(),
-          records,
-        }).catch(err =>
-          console.error('[Scheduler] Session closed email error:', err.message)
-        );
+        try {
+          sendSessionClosedEmails({
+            className,
+            sessionTitle: session.title,
+            closedAt:     now.toISOString(),
+            records,
+          }).catch(err =>
+            console.error('[Scheduler] Session closed email error:', err.message)
+          );
+        } catch (err) {
+          console.warn('[Scheduler] Session closed email skipped:', err.message);
+        }
       }
     }
 

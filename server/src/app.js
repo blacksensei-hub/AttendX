@@ -104,16 +104,31 @@ app.use('/api/schedules',     scheduleRoutes);
 app.use('/api/impersonation', impersonationRoutes);
 
 // ─── Health check ─────────────────────────────────────────────
-// Exposed at both paths: /health for platform probes (Railway) and
-// /api/health for the client, whose base URL already carries the /api
-// prefix (so api.get('/health') resolves to /api/health).
-app.get('/health', (req, res) =>
-  res.json({ status: 'ok', timestamp: new Date() })
-);
+// Exposed at both paths: /health for platform probes (Railway/Render)
+// and external uptime monitors, and /api/health for the client, whose
+// base URL already carries the /api prefix (so api.get('/health')
+// resolves to /api/health).
+//
+// Runs a trivial query so an external keep-alive ping (e.g. UptimeRobot
+// hitting /health every few minutes) also exercises the Sequelize pool
+// and Neon's compute endpoint, not just the Node process — a ping that
+// only returned a static JSON body kept Express warm but let the DB
+// connection go cold between pings (see database.js's pool.min).
+// Never fails the response itself on a DB error — a keep-alive probe
+// erroring out would be worse than a probe that just reports it.
+const healthCheck = async (req, res) => {
+  let db = 'ok';
+  try {
+    await sequelize.query('SELECT 1');
+  } catch (err) {
+    db = 'error';
+    console.error('[health] DB ping failed:', err.message);
+  }
+  res.json({ status: 'ok', db, timestamp: new Date() });
+};
 
-app.get('/api/health', (req, res) =>
-  res.json({ status: 'ok', timestamp: new Date() })
-);
+app.get('/health', healthCheck);
+app.get('/api/health', healthCheck);
 
 // ─── Global error handler ─────────────────────────────────────
 app.use((err, req, res, next) => {

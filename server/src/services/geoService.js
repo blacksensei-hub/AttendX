@@ -4,7 +4,11 @@ const geolib = require('geolib');
  * Check if student coordinates are within the class geofence.
  */
 function isWithinGeofence({ studentLat, studentLng, centerLat, centerLng, radiusMeters }) {
-  if (!centerLat || !centerLng) return true; // No geofence set — always pass
+  // No geofence set — always pass. Returns the same { within, distance }
+  // shape as the geofence-configured branch below (previously returned a
+  // bare `true` here, which was inconsistent and a landmine for any
+  // caller that didn't already guard against it — see attendanceController.js).
+  if (!centerLat || !centerLng) return { within: true, distance: 0 };
 
   const distance = geolib.getDistance(
     { latitude: parseFloat(studentLat), longitude: parseFloat(studentLng) },

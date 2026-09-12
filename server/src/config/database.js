@@ -26,9 +26,18 @@ const sequelize = process.env.DATABASE_URL
       // per-connection limits on the free tier — 10 simultaneous connection
       // attempts from a cold pool is a plausible way to get intermittently
       // refused where a single bare socket connects fine.
+      // min: 1 (not 0) keeps one connection permanently open rather than
+      // tearing it down after every `idle` (10s) gap between queries. With
+      // min: 0, any request arriving more than 10s after the last one pays
+      // for a full fresh connection (TCP + TLS + Postgres + PgBouncer
+      // handshake) before its query can even run — on a sparse-usage app
+      // like this, that's most requests, and it was eating directly into
+      // the ~7s QR-token expiry window on attendance scans. Pairs with the
+      // DB-touching /health check (app.js), which detects and replaces
+      // this connection if Neon's own compute suspend ever force-closes it.
       pool: {
         max:     5,
-        min:     0,
+        min:     1,
         acquire: 30000,
         idle:    10000,
       },

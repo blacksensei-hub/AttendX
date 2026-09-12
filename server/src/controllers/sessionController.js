@@ -44,15 +44,22 @@ async function notifySessionClosed(session, cls) {
     if (records.length === 0) return;
 
     // Fire and forget — a slow email server should never delay
-    // the API response or block the scheduler's next cycle
-    sendSessionClosedEmails({
-      className,
-      sessionTitle: session.title,
-      closedAt:     session.closed_at ?? new Date().toISOString(),
-      records,
-    }).catch(err =>
-      console.error('[Session] Closed email batch error:', err.message)
-    );
+    // the API response or block the scheduler's next cycle.
+    // Guarded against a synchronous throw as well as an async rejection, so
+    // an unavailable email service degrades to a warning instead of being
+    // reported as a notifySessionClosed failure.
+    try {
+      sendSessionClosedEmails({
+        className,
+        sessionTitle: session.title,
+        closedAt:     session.closed_at ?? new Date().toISOString(),
+        records,
+      }).catch(err =>
+        console.error('[Session] Closed email batch error:', err.message)
+      );
+    } catch (err) {
+      console.warn('[Session] Closed email batch skipped:', err.message);
+    }
   } catch (err) {
     console.error('[Session] notifySessionClosed error:', err.message);
   }
@@ -119,25 +126,40 @@ exports.openSession = async (req, res) => {
 
     // Create in-app bell notifications for all enrolled students.
     // Fire and forget — a notification failure must never block the response.
-    notifyEnrolledStudents(io, classId, {
-      type:    'session_opened',
-      title:   '🔴 Attendance session opened',
-      message: `${cls.name} has started an attendance session. Mark your attendance now!`,
-      data:    { sessionId: session.id, classId, className: cls.name },
-    }).catch(err => console.error('[Session] Notify error:', err.message));
+    try {
+      notifyEnrolledStudents(io, classId, {
+        type:    'session_opened',
+        title:   '🔴 Attendance session opened',
+        message: `${cls.name} has started an attendance session. Mark your attendance now!`,
+        data:    { sessionId: session.id, classId, className: cls.name },
+      }).catch(err => console.error('[Session] Notify error:', err.message));
+    } catch (err) {
+      console.warn('[Session] Notify skipped:', err.message);
+    }
 
     // Send session opened emails to all enrolled students in parallel.
     // Promise.allSettled ensures one failed email never blocks the rest.
-    Promise.allSettled(
-      enrollments
-        .filter(e => e.student)
-        .map(e => sendSessionOpenedEmail({
-          to:           e.student.email,
-          studentName:  e.student.name,
-          className:    cls.name,
-          sessionTitle: session.title,
-        }))
-    ).catch(err => console.error('[Session] Opened email batch error:', err.message));
+    //
+    // The try/catch is not redundant with the .catch(): building the array
+    // can throw *synchronously* (a bad import leaves sendSessionOpenedEmail
+    // undefined, so .map() throws before allSettled is ever constructed), and
+    // a synchronous throw here would escape to the outer catch and turn an
+    // already-successful open into a 500. Emails are best-effort — nothing in
+    // this block may change the response.
+    try {
+      Promise.allSettled(
+        enrollments
+          .filter(e => e.student)
+          .map(e => sendSessionOpenedEmail({
+            to:           e.student.email,
+            studentName:  e.student.name,
+            className:    cls.name,
+            sessionTitle: session.title,
+          }))
+      ).catch(err => console.error('[Session] Opened email batch error:', err.message));
+    } catch (err) {
+      console.warn('[Session] Opened email batch skipped:', err.message);
+    }
 
     // NOTE: The 2-minute closing-soon warning and auto-close are both handled
     // by the background scheduler in sessionScheduler.js — no setTimeout needed.

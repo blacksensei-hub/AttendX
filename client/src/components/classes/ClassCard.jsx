@@ -380,10 +380,13 @@ function ClassCard({ cls, onDelete }) {
         classData={cls}
         open={showOpenSession}
         onClose={() => setShowOpenSession(false)}
-        onOpened={async () => {
-          await qc.invalidateQueries({ queryKey: ['classes'] });
-          await qc.refetchQueries({ queryKey: ['classes'] });
-          navigate('/lecturer/sessions');
+        onOpened={(session) => {
+          // Navigate straight into the session that was just opened
+          // (and its QR code) instead of the generic sessions list —
+          // the lecturer shouldn't have to go find it themselves.
+          setShowOpenSession(false);
+          qc.invalidateQueries({ queryKey: ['classes'] });
+          navigate(`/lecturer/session/${session.id}`);
         }}
       />
 

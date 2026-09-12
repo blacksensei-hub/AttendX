@@ -1,8 +1,11 @@
 import api from './api';
 
 export const sessionService = {
+  // Opening a session fans out to notifications and a batch of emails, so
+  // it can outrun the 15s default on a slow first request. 30s absorbs that
+  // without making a genuine hang take a full minute to surface.
   openSession: (classId, data) =>
-    api.post(`/sessions`, { classId, ...data }).then(r => r.data),
+    api.post(`/sessions`, { classId, ...data }, { timeout: 30000 }).then(r => r.data),
 
   closeSession: (sessionId) =>
     api.put(`/sessions/${sessionId}/close`).then(r => r.data),

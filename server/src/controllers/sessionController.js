@@ -313,11 +313,6 @@ exports.getActiveSessions = async (req, res) => {
       existingMarks.map(a => [a.session_id, a.status])
     );
 
-    // TEMP DIAGNOSTIC — remove once markedStatus mismatch is resolved
-    console.log('[markedStatus debug] req.user.id =', req.user.id);
-    console.log('[markedStatus debug] sessionIds =', sessionIds);
-    console.log('[markedStatus debug] existingMarks =', JSON.stringify(existingMarks, null, 2));
-    console.log('[markedStatus debug] markedBySessionId =', [...markedBySessionId.entries()]);
 
     const result = sessions.map(s => ({
       id:            s.id,

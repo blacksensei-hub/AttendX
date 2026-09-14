@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 
 /**
  * ═════════════════════════════════════════════════════════════════
- * Socket service — singleton manager for the lecturer mobile app.
+ * Socket service — singleton manager for the mobile app.
  *
  * Design notes:
  *
@@ -15,18 +15,24 @@ import { useAuthStore } from '../store/authStore';
  *   same room naming. The server-side socket config we're connecting to
  *   lives in server/src/config/socket.js.
  *
- * • Singleton, not a hook. The web app uses a hook because each
- *   component manages its own connection lifecycle; on mobile we have
- *   exactly one screen that needs sockets right now (the live session
- *   view) so a singleton is simpler. If we ever need sockets on the
- *   student app for live session-opened notifications, we'd export
- *   a `useSocket` hook that wraps this singleton.
+ * • Singleton, not a hook. Multiple screens (live session view, the
+ *   student NotificationBell) share one underlying connection rather
+ *   than each opening their own.
  *
  * • Listener registry, not raw socket.on. We track per-event listeners
  *   in an internal Map so we can re-attach them automatically on
  *   reconnect. socket.io-client *does* auto-reconnect by default, but
  *   without re-attaching listeners and re-joining rooms, the connection
  *   would silently stop receiving events after a network blip.
+ *
+ * • Transport: no longer forced to websocket-only. Restricting to
+ *   `transports: ['websocket']` skips the polling-based handshake some
+ *   hosts/proxies (Render's included) require to establish a
+ *   connection before upgrading — forcing pure WebSocket from the
+ *   first attempt produced a tight "websocket error" reconnect loop
+ *   in practice. Leaving transports unset lets socket.io negotiate
+ *   (starts on polling, upgrades to websocket when the environment
+ *   allows it), which is the more resilient default.
  * ═════════════════════════════════════════════════════════════════
  */
 
@@ -76,7 +82,9 @@ class SocketManager {
 
     this.socket = io(url, {
       auth:                  { token },
-      transports:            ['websocket'],
+      // No `transports` restriction — let socket.io negotiate. See the
+      // class-level comment above for why forcing websocket-only broke
+      // the connection against Render.
       reconnection:          true,
       reconnectionDelay:     2000,
       reconnectionDelayMax:  10000,

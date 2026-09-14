@@ -1,3 +1,5 @@
+// server/src/controllers/sessionController.js
+
 const { notifyEnrolledStudents } = require('../services/notificationService');
 const { Session, Class, Enrollment, Attendance, QRToken, User } = require('../models');
 const { generateToken }          = require('../services/qrService');
@@ -9,30 +11,22 @@ const {
 } = require('../services/emailService');
 
 // ─── Shared helper: notify students when a session closes ─────
-// Called by both closeSession (manual) and the background scheduler
-// (auto-close) so the logic is identical in both cases.
 async function notifySessionClosed(session, cls) {
   try {
     const className = cls?.name ?? session.class_name_snapshot ?? 'your class';
 
-    // Fetch every enrolled student with their user details
     const enrollments = await Enrollment.findAll({
       where:   { class_id: session.class_id },
       include: [{ model: User, as: 'student', attributes: ['id', 'name', 'email'] }],
     });
 
-    // Fetch all attendance records for this session so we know
-    // who marked and what their status was
     const attendanceRecords = await Attendance.findAll({
       where: { session_id: session.id },
     });
 
-    // Build a lookup map from student_id → status for O(1) access
     const statusMap = {};
     attendanceRecords.forEach(r => { statusMap[r.student_id] = r.status; });
 
-    // Every enrolled student gets an email — those who never marked
-    // attendance are included with status 'absent' rather than omitted
     const records = enrollments
       .filter(e => e.student)
       .map(e => ({
@@ -43,20 +37,15 @@ async function notifySessionClosed(session, cls) {
 
     if (records.length === 0) return;
 
-    // Fire and forget — a slow email server should never delay
-    // the API response or block the scheduler's next cycle.
-    // Guarded against a synchronous throw as well as an async rejection, so
-    // an unavailable email service degrades to a warning instead of being
-    // reported as a notifySessionClosed failure.
+    // Wrapped so an email failure can NEVER fail the request that
+    // triggered this — see the emailService clobber incident notes.
     try {
-      sendSessionClosedEmails({
+      await sendSessionClosedEmails({
         className,
         sessionTitle: session.title,
         closedAt:     session.closed_at ?? new Date().toISOString(),
         records,
-      }).catch(err =>
-        console.error('[Session] Closed email batch error:', err.message)
-      );
+      });
     } catch (err) {
       console.warn('[Session] Closed email batch skipped:', err.message);
     }
@@ -65,7 +54,6 @@ async function notifySessionClosed(session, cls) {
   }
 }
 
-// Export so the scheduler can call the same function for auto-closes
 exports.notifySessionClosed = notifySessionClosed;
 
 // ─── Open session ─────────────────────────────────────────────
@@ -73,22 +61,17 @@ exports.openSession = async (req, res) => {
   try {
     const { classId, title, late_threshold, qr_interval, close_after } = req.body;
 
-    // Verify the class exists and belongs to this lecturer
     const cls = await Class.findOne({
       where: { id: classId, lecturer_id: req.user.id },
     });
     if (!cls) return res.status(404).json(error('Class not found or unauthorized'));
 
-    // Prevent opening a second session while one is already running
     const existingOpen = await Session.findOne({
       where: { class_id: classId, status: 'open' },
     });
     if (existingOpen)
       return res.status(409).json(error('A session is already open for this class'));
 
-    // Calculate the absolute auto-close timestamp from the relative minutes.
-    // We store this in the database so the background scheduler can find it —
-    // this is far more reliable than setTimeout which is lost on server restart.
     const closeAt = close_after
       ? new Date(Date.now() + close_after * 60 * 1000)
       : null;
@@ -99,53 +82,51 @@ exports.openSession = async (req, res) => {
       late_threshold:      late_threshold ?? 15,
       qr_interval:         qr_interval    ?? 5,
       close_at:            closeAt,
-      geo_lat:             cls.geo_lat,
-      geo_lng:             cls.geo_lng,
-      geo_radius:          cls.geo_radius,
+      geo_lat:             cls.geo_lat    ?? null,
+      geo_lng:             cls.geo_lng    ?? null,
+      geo_radius:          cls.geo_radius ?? null,
       class_name_snapshot: cls.name,
     });
 
-    // Generate the first QR token immediately so the lecturer sees
-    // a QR code the moment the session page loads
-    await generateToken(session.id, session.qr_interval);
+    // Generate first QR token
+    try {
+      await generateToken(session.id, session.qr_interval);
+    } catch (tokenErr) {
+      console.error('[Session] generateToken error:', tokenErr);
+      // Don't fail the whole request — the QR page will retry
+    }
 
     const io = req.app.get('io');
 
-    // Push a WebSocket event to any students already on their dashboard
     io?.to(`class:${classId}`).emit('session:opened', {
       sessionId: session.id,
       className: cls.name,
       title:     session.title,
     });
 
-    // Fetch enrolled students once — reused for both notifications and emails
-    const enrollments = await Enrollment.findAll({
-      where:   { class_id: classId },
-      include: [{ model: User, as: 'student', attributes: ['id', 'name', 'email'] }],
-    });
-
-    // Create in-app bell notifications for all enrolled students.
-    // Fire and forget — a notification failure must never block the response.
+    // Fetch enrolled students for notifications + emails
+    let enrollments = [];
     try {
-      notifyEnrolledStudents(io, classId, {
-        type:    'session_opened',
-        title:   '🔴 Attendance session opened',
-        message: `${cls.name} has started an attendance session. Mark your attendance now!`,
-        data:    { sessionId: session.id, classId, className: cls.name },
-      }).catch(err => console.error('[Session] Notify error:', err.message));
-    } catch (err) {
-      console.warn('[Session] Notify skipped:', err.message);
+      enrollments = await Enrollment.findAll({
+        where:   { class_id: classId },
+        include: [{ model: User, as: 'student', attributes: ['id', 'name', 'email'] }],
+      });
+    } catch (enrollErr) {
+      console.error('[Session] Enrollment fetch error:', enrollErr);
     }
 
-    // Send session opened emails to all enrolled students in parallel.
-    // Promise.allSettled ensures one failed email never blocks the rest.
-    //
-    // The try/catch is not redundant with the .catch(): building the array
-    // can throw *synchronously* (a bad import leaves sendSessionOpenedEmail
-    // undefined, so .map() throws before allSettled is ever constructed), and
-    // a synchronous throw here would escape to the outer catch and turn an
-    // already-successful open into a 500. Emails are best-effort — nothing in
-    // this block may change the response.
+    // In-app notifications — fire and forget
+    notifyEnrolledStudents(io, classId, {
+      type:    'session_opened',
+      title:   '🔴 Attendance session opened',
+      message: `${cls.name} has started an attendance session. Mark your attendance now!`,
+      data:    { sessionId: session.id, classId, className: cls.name },
+    }).catch(err => console.error('[Session] Notify error:', err.message));
+
+    // Emails — fire and forget, and wrapped so a synchronous throw
+    // inside the .map() (e.g. an undefined email function) can never
+    // reach the outer try/catch and turn a successful open into a 500.
+    // See: emailService.js clobber incident.
     try {
       Promise.allSettled(
         enrollments
@@ -156,19 +137,16 @@ exports.openSession = async (req, res) => {
             className:    cls.name,
             sessionTitle: session.title,
           }))
-      ).catch(err => console.error('[Session] Opened email batch error:', err.message));
+      ).catch(err => console.warn('[Session] Opened email batch failed:', err.message));
     } catch (err) {
       console.warn('[Session] Opened email batch skipped:', err.message);
     }
 
-    // NOTE: The 2-minute closing-soon warning and auto-close are both handled
-    // by the background scheduler in sessionScheduler.js — no setTimeout needed.
-    // The scheduler polls every 30 seconds and handles both reliably, even
-    // surviving server restarts because it reads close_at from the database.
+    // Use toJSON() to avoid Sequelize circular reference issues
+    return res.status(201).json(success({ session: session.toJSON() }, 'Session opened'));
 
-    return res.status(201).json(success({ session }, 'Session opened'));
   } catch (err) {
-    console.error('OPEN SESSION ERROR:', err.message);
+    console.error('[Session] openSession error:', err);
     return res.status(500).json(error('Server error'));
   }
 };
@@ -181,25 +159,21 @@ exports.closeSession = async (req, res) => {
     const session = await Session.findByPk(sessionId);
     if (!session) return res.status(404).json(error('Session not found'));
 
-    // Verify ownership — the class may have been deleted, in which case
-    // cls will be null. We only enforce ownership if the class still exists.
     const cls = await Class.findByPk(session.class_id);
     if (cls && cls.lecturer_id !== req.user.id)
       return res.status(403).json(error('Not your session'));
 
     await session.update({ status: 'closed', closed_at: new Date() });
 
-    // Tell any open WebSocket connections that the session has ended
     req.app.get('io')
       ?.to(`session:${sessionId}`)
       .emit('session:closed', { sessionId });
 
-    // Send summary emails to all enrolled students — non-blocking
     notifySessionClosed(session, cls);
 
-    return res.json(success({ session }, 'Session closed'));
+    return res.json(success({ session: session.toJSON() }, 'Session closed'));
   } catch (err) {
-    console.error('CLOSE SESSION ERROR:', err.message);
+    console.error('[Session] closeSession error:', err);
     return res.status(500).json(error('Server error'));
   }
 };
@@ -212,21 +186,37 @@ exports.getCurrentQR = async (req, res) => {
     if (!session || session.status !== 'open')
       return res.status(404).json(error('No active session'));
 
-    // Find the most recent unexpired token
+    // Only REUSE an existing token if it still has a comfortable margin of
+    // life left; otherwise mint a fresh one. This buffer MUST exceed the
+    // grace that qrService.generateToken bakes into every token:
+    //
+    //     expires_at = now + (qr_interval + 2) seconds   // 2s grace
+    //
+    // The lecturer's display polls for the next token at ~qr_interval, when
+    // the current token still has ~2s of that grace remaining. A plain
+    // `expires_at > now` check (or any buffer ≤ 2s) therefore hands the SAME
+    // token back, making the code linger for two windows before rotating.
+    // 3s (2s grace + ~1s poll-timing jitter) guarantees the boundary poll
+    // gets a genuinely fresh token, so the QR and its code rotate each cycle.
+    // (Safe for the UI's 3s minimum interval: a fresh token's life is
+    // interval + 2 ≥ 5s, comfortably above this buffer.)
+    const REUSE_BUFFER_MS = 3000;
+    const cutoff = new Date(Date.now() + REUSE_BUFFER_MS);
+
     let qr = await QRToken.findOne({
       where: {
         session_id: sessionId,
         used:       false,
-        expires_at: { [Op.gt]: new Date() },
+        expires_at: { [Op.gt]: cutoff },
       },
       order: [['issued_at', 'DESC']],
     });
 
-    // If no valid token exists, generate a fresh one
     if (!qr) qr = await generateToken(sessionId, session.qr_interval);
 
     return res.json(success({ token: qr.token, expiresAt: qr.expires_at }));
   } catch (err) {
+    console.error('[Session] getCurrentQR error:', err);
     return res.status(500).json(error('Server error'));
   }
 };
@@ -244,10 +234,14 @@ exports.getSession = async (req, res) => {
     });
 
     return res.json(success({
-      session: { ...session.toJSON(), class: cls, enrollmentCount },
+      session: {
+        ...session.toJSON(),
+        class: cls?.toJSON() ?? null,
+        enrollmentCount,
+      },
     }));
   } catch (err) {
-    console.error('GET SESSION ERROR:', err.message);
+    console.error('[Session] getSession error:', err);
     return res.status(500).json(error('Server error'));
   }
 };
@@ -258,7 +252,7 @@ exports.getLiveAttendance = async (req, res) => {
     const { sessionId } = req.params;
     const records = await Attendance.findAll({
       where:   { session_id: sessionId },
-      include: [{ association: 'student', attributes: ['id','name','email','student_id'] }],
+      include: [{ association: 'student', attributes: ['id', 'name', 'email', 'student_id'] }],
       order:   [['marked_at', 'DESC']],
     });
 
@@ -274,6 +268,7 @@ exports.getLiveAttendance = async (req, res) => {
 
     return res.json(success({ records: formatted }));
   } catch (err) {
+    console.error('[Session] getLiveAttendance error:', err);
     return res.status(500).json(error('Server error'));
   }
 };
@@ -291,16 +286,52 @@ exports.getActiveSessions = async (req, res) => {
       include: [{ association: 'class', attributes: ['name', 'code'] }],
     });
 
+    // One extra query rather than N — fetch every attendance row this
+    // student already has for these specific open sessions, then look
+    // each session up in that set below. Lets the dashboard show
+    // "Attendance marked" instead of a "Mark" button the moment a scan
+    // succeeds, without the client having to track that state itself
+    // (which would be lost on app restart or a second device).
+    const sessionIds = sessions.map(s => s.id);
+    const existingMarks = sessionIds.length
+      ? await Attendance.findAll({
+          where: {
+            // Explicit Op.in rather than relying on Sequelize's implicit
+            // array-to-IN coercion — that worked inconsistently and was
+            // the actual cause of a confirmed bug: a real, correctly-
+            // written attendance row (verified directly in the DB) was
+            // still not being matched here, leaving markedStatus null
+            // and the dashboard showing "Mark" for a session the student
+            // had already scanned.
+            session_id: { [Op.in]: sessionIds },
+            student_id: req.user.id,
+          },
+          attributes: ['session_id', 'status'],
+        })
+      : [];
+    const markedBySessionId = new Map(
+      existingMarks.map(a => [a.session_id, a.status])
+    );
+
+    // TEMP DIAGNOSTIC — remove once markedStatus mismatch is resolved
+    console.log('[markedStatus debug] req.user.id =', req.user.id);
+    console.log('[markedStatus debug] sessionIds =', sessionIds);
+    console.log('[markedStatus debug] existingMarks =', JSON.stringify(existingMarks, null, 2));
+    console.log('[markedStatus debug] markedBySessionId =', [...markedBySessionId.entries()]);
+
     const result = sessions.map(s => ({
-      id:        s.id,
-      classId:   s.class_id,
-      className: s.class?.name,
-      title:     s.title,
-      openAt:    s.open_at,
+      id:            s.id,
+      classId:       s.class_id,
+      className:     s.class?.name,
+      title:         s.title,
+      openAt:        s.open_at,
+      // null when not yet marked; 'present' | 'late' when it has been.
+      markedStatus:  markedBySessionId.get(s.id) ?? null,
     }));
 
     return res.json(success({ sessions: result }));
   } catch (err) {
+    console.error('[Session] getActiveSessions error:', err);
     return res.status(500).json(error('Server error'));
   }
 };
@@ -323,9 +354,6 @@ exports.getLecturerActiveSessions = async (req, res) => {
       order: [['open_at', 'DESC']],
     });
 
-    // Enrich each session with live counts — queries run in parallel
-    // so total time is bounded by the slowest single session, not by
-    // the sum of all sessions.
     const enriched = await Promise.all(sessions.map(async s => {
       const [records, enrollmentCount] = await Promise.all([
         Attendance.findAll({ where: { session_id: s.id } }),
@@ -348,7 +376,7 @@ exports.getLecturerActiveSessions = async (req, res) => {
 
     return res.json(success({ sessions: enriched }));
   } catch (err) {
-    console.error('GET LECTURER ACTIVE SESSIONS ERROR:', err.message);
+    console.error('[Session] getLecturerActiveSessions error:', err);
     return res.status(500).json(error('Server error'));
   }
 };

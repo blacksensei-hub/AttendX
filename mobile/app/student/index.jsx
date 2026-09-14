@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback }        from 'react';
 import { View, Text }                              from 'react-native';
-import { router }                                  from 'expo-router';
+import { router, useFocusEffect }                  from 'expo-router';
 import Animated, { FadeInUp }                      from 'react-native-reanimated';
 import {
   QrCode, BookOpen, Clock, TrendingUp,
@@ -18,6 +18,7 @@ import Button                                      from '../../src/components/ui
 import IconTile                                    from '../../src/components/ui/IconTile';
 import StatusPill                                  from '../../src/components/ui/StatusPill';
 import EmptyState                                  from '../../src/components/ui/EmptyState';
+import NotificationBell                            from '../../src/components/notifications/NotificationBell';
 import { DURATION }                                from '../../src/lib/motion';
 
 /**
@@ -25,16 +26,33 @@ import { DURATION }                                from '../../src/lib/motion';
  * StudentDashboard — the first thing a student sees after login.
  *
  * Hierarchy of importance (top to bottom):
- *   1. Personal greeting + active-session callout (if any)
+ *   1. Personal greeting + notification bell + active-session callout
  *   2. Empty state (only if student isn't enrolled in any classes)
  *   3. Four stat cards — attendance performance at a glance
  *   4. Quick actions — Scan / Classes / History
  *
  * Three parallel data fetches:
- *   GET /sessions/active         — live sessions the student can join
+ *   GET /sessions/active         — live sessions the student can join,
+ *                                  each carrying markedStatus (server-
+ *                                  computed — see sessionController.
+ *                                  getActiveSessions) so a session the
+ *                                  student already scanned renders as
+ *                                  "Marked" instead of a "Mark" button,
+ *                                  correctly even after an app restart.
  *   GET /reports/student-stats   — attendance metrics for the cards
  *   GET /classes/enrolled        — used only to detect "zero classes"
  *                                  state for the empty state card
+ *
+ * Refetches on focus (useFocusEffect), not just on mount. Without
+ * this, returning from Scan after a successful mark would still show
+ * the stale "Mark" button until a manual pull-to-refresh — the whole
+ * point of markedStatus is defeated if the screen never re-asks for
+ * it. On mount and on focus both call the same fetchData, so there's
+ * no double-fetch flicker on first load.
+ *
+ * NotificationBell is self-contained (fetches and polls its own
+ * data), so it's dropped in as a sibling in the header row — no
+ * state or props needed here.
  * ═════════════════════════════════════════════════════════════════
  */
 export default function StudentDashboard() {
@@ -80,6 +98,15 @@ export default function StudentDashboard() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Refetch every time this screen regains focus — the natural way a
+  // student returns here is Scan → success card → auto-navigate back,
+  // and that trip needs to show "Marked" without a manual refresh.
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -176,6 +203,10 @@ function GreetingHeader({ t, firstName, sessions, loading }) {
 
         <SubGreeting t={t} sessions={sessions} loading={loading} />
       </View>
+
+      {/* Self-contained — fetches and polls its own notification
+          data, so no props are needed here beyond its own defaults. */}
+      <NotificationBell />
     </View>
   );
 }
@@ -267,7 +298,13 @@ function ActiveSessionsCard({ t, sessions }) {
 }
 
 // ─── Single row inside ActiveSessionsCard ─────────────────────
+// Reads session.markedStatus (set by the server — see
+// sessionController.getActiveSessions) rather than tracking marked
+// state client-side, so it's correct even after an app restart or
+// if the student marked from a different device.
 function SessionRow({ t, session }) {
+  const alreadyMarked = Boolean(session.markedStatus);
+
   const goToScan = () => {
     router.push({
       pathname: '/student/scan',
@@ -284,7 +321,7 @@ function SessionRow({ t, session }) {
       backgroundColor: t.colors.bgRaised,
       borderRadius:    t.radius.atomic,
       borderWidth:     1,
-      borderColor:     t.colors.border,
+      borderColor:     alreadyMarked ? t.colors.greenBorder : t.colors.border,
     }}>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <Text
@@ -309,12 +346,35 @@ function SessionRow({ t, session }) {
         </Text>
       </View>
 
-      <Button
-        label="Mark"
-        size="sm"
-        iconRight={ArrowRight}
-        onPress={goToScan}
-      />
+      {alreadyMarked ? (
+        <View style={{
+          flexDirection:     'row',
+          alignItems:        'center',
+          gap:               6,
+          paddingVertical:   6,
+          paddingHorizontal: 12,
+          borderRadius:      t.radius.atomic,
+          backgroundColor:   t.colors.greenBg,
+          borderWidth:       1,
+          borderColor:       t.colors.greenBorder,
+        }}>
+          <CheckCircle size={14} color={t.colors.green} strokeWidth={2.4} />
+          <Text style={{
+            fontFamily: t.fontFamily.bodySemibold,
+            fontSize:   t.fontSize.xs,
+            color:      t.colors.green,
+          }}>
+            {session.markedStatus === 'late' ? 'Marked (late)' : 'Marked'}
+          </Text>
+        </View>
+      ) : (
+        <Button
+          label="Mark"
+          size="sm"
+          iconRight={ArrowRight}
+          onPress={goToScan}
+        />
+      )}
     </View>
   );
 }

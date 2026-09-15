@@ -1,15 +1,19 @@
+// mobile/app/student/history.jsx
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View, Text, FlatList, RefreshControl,
+  Modal, TextInput, Pressable, KeyboardAvoidingView,
+  Platform, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import Animated, {
   FadeInUp, Layout,
+  useSharedValue, useAnimatedStyle, withSpring,
 } from 'react-native-reanimated';
 import {
-  Clock, CheckCircle2, AlertCircle, XCircle,
-  Filter, Calendar,
+  Clock, Filter, Calendar,
+  MessageSquare, AlertTriangle, X, Send,
 } from 'lucide-react-native';
 
 import api from '../../services/api';
@@ -18,15 +22,7 @@ import { useTheme }    from '../../src/theme/ThemeProvider';
 import Card            from '../../src/components/ui/Card';
 import IconTile        from '../../src/components/ui/IconTile';
 import StatusPill      from '../../src/components/ui/StatusPill';
-import Button          from '../../src/components/ui/Button';
 import { DURATION, SPRING, TAP } from '../../src/lib/motion';
-
-import {
-  Pressable,
-} from 'react-native';
-import {
-  useSharedValue, useAnimatedStyle, withSpring,
-} from 'react-native-reanimated';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -54,32 +50,72 @@ const FILTERS = [
   { key: 'absent',  label: 'Absent'  },
 ];
 
+// Maps appeal status → display config
+const APPEAL_CONFIG = {
+  pending:  { label: 'Pending',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  approved: { label: 'Approved', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  rejected: { label: 'Rejected', color: '#ef4444', bg: 'rgba(239,68,68,0.12)'  },
+};
+
 export default function HistoryScreen() {
   const t = useTheme();
 
   const [records,    setRecords]    = useState([]);
+  const [appeals,    setAppeals]    = useState([]); // student's existing appeals
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter,     setFilter]     = useState('all');
 
-  const fetchHistory = useCallback(async () => {
+  // The record currently being appealed, or null when the sheet is closed
+  const [appealTarget, setAppealTarget] = useState(null);
+
+  // ── Fetch history and existing appeals in parallel ───────────
+  // allSettled, not all: a failing /appeals/my must not blank out
+  // the history list, which is the primary content of this screen.
+  const fetchData = useCallback(async () => {
     try {
-      const { data } = await api.get('/reports/student-history');
-      setRecords(data.records ?? []);
+      const [histRes, appealRes] = await Promise.allSettled([
+        api.get('/reports/student-history'),
+        api.get('/appeals/my'),
+      ]);
+
+      if (histRes.status === 'fulfilled') {
+        const d = histRes.value.data;
+        setRecords(d?.records ?? d?.data?.records ?? []);
+      }
+      if (appealRes.status === 'fulfilled') {
+        const d = appealRes.value.data;
+        setAppeals(d?.appeals ?? d?.data?.appeals ?? []);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('[History] fetchData error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchHistory();
+    fetchData();
   };
+
+  // Key appeals by session, not by attendance id. An absent record has
+  // no attendance row at all — the server stores attendance_id: null and
+  // the history query hands back a synthetic `id`, so an attendance-keyed
+  // lookup can never match the one case that can actually be appealed.
+  // The server also enforces one appeal per (student, session), so the
+  // session id is the natural key on both sides.
+  const appealBySessionId = useMemo(() => {
+    const map = new Map();
+    for (const a of appeals) {
+      const key = a.sessionId ?? a.session_id;
+      if (key) map.set(String(key), a);
+    }
+    return map;
+  }, [appeals]);
 
   // ── Filter records by status, then build flat list of
   // ── { type: 'header'|'record', ... } items for FlatList
@@ -90,11 +126,19 @@ export default function HistoryScreen() {
 
     if (filtered.length === 0) return [];
 
-    // Group by date (day-level resolution)
+    // Group by date (day-level resolution).
+    //
+    // Absent records have no attendance row, so marked_at is null — fall
+    // back to the session's openAt. Skipping null marked_at here (as this
+    // did previously) silently dropped every absent record from the list
+    // while the header still counted them, so the "Absent" filter always
+    // rendered empty.
+    const dateOf = r => new Date(r.marked_at ?? r.openAt);
+
     const groups = new Map();
     for (const r of filtered) {
-      if (!r.marked_at) continue;
-      const date = new Date(r.marked_at);
+      const date = dateOf(r);
+      if (Number.isNaN(date.getTime())) continue;
       const dayKey = format(date, 'yyyy-MM-dd');
       if (!groups.has(dayKey)) {
         groups.set(dayKey, { date, records: [] });
@@ -114,15 +158,18 @@ export default function HistoryScreen() {
         count: recs.length,
       });
       // Sort records within day by time, newest first
-      const byTime = [...recs].sort((a, b) =>
-        new Date(b.marked_at) - new Date(a.marked_at)
-      );
+      const byTime = [...recs].sort((a, b) => dateOf(b) - dateOf(a));
       for (const r of byTime) {
-        flat.push({ type: 'record', key: `r-${r.id}`, record: r });
+        flat.push({
+          type:   'record',
+          key:    `r-${r.id}`,
+          record: r,
+          appeal: appealBySessionId.get(String(r.sessionId)),
+        });
       }
     }
     return flat;
-  }, [records, filter]);
+  }, [records, filter, appealBySessionId]);
 
   // ── Stats for the header subtitle ──
   const counts = useMemo(() => {
@@ -132,6 +179,13 @@ export default function HistoryScreen() {
     }
     return c;
   }, [records]);
+
+  // After a successful submission, fold the new appeal into state rather
+  // than refetching — the row's badge flips over immediately.
+  const onAppealSubmitted = (sessionId, appeal) => {
+    setAppeals(prev => [...prev, { ...appeal, sessionId }]);
+    setAppealTarget(null);
+  };
 
   return (
     <SafeAreaView
@@ -219,9 +273,27 @@ export default function HistoryScreen() {
           renderItem={({ item, index }) =>
             item.type === 'header'
               ? <DateHeader t={t} date={item.date} count={item.count} />
-              : <RecordRow t={t} record={item.record} index={index} />
+              : (
+                <RecordRow
+                  t={t}
+                  record={item.record}
+                  appeal={item.appeal}
+                  index={index}
+                  onAppeal={() => setAppealTarget(item.record)}
+                />
+              )
           }
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        />
+      )}
+
+      {/* ── Appeal sheet ─────────────────────────────── */}
+      {appealTarget && (
+        <AppealModal
+          t={t}
+          record={appealTarget}
+          onClose={() => setAppealTarget(null)}
+          onSuccess={onAppealSubmitted}
         />
       )}
     </SafeAreaView>
@@ -321,7 +393,7 @@ function DateHeader({ t, date, count }) {
 }
 
 // ─── Record row ────────────────────────────────────────────────
-function RecordRow({ t, record: r, index }) {
+function RecordRow({ t, record: r, appeal, index, onAppeal }) {
   // Pick accent colour for the left rail based on status
   const tone = r.status === 'present' ? 'green'
              : r.status === 'late'    ? 'amber'
@@ -336,6 +408,15 @@ function RecordRow({ t, record: r, index }) {
   const time = r.marked_at
     ? format(new Date(r.marked_at), 'HH:mm')
     : '—';
+
+  // Only an absent record can be appealed, and only once. The server
+  // rejects a duplicate with 409, so hiding the button once an appeal
+  // exists keeps the client from offering a call it knows will fail.
+  const canAppeal = r.status === 'absent' && !appeal;
+  const appealCfg = appeal ? APPEAL_CONFIG[appeal.status] : null;
+  // Sequelize serialises the column as lecturer_note; the camelCase
+  // spelling the previous version read here never existed on the payload.
+  const lecturerNote = appeal?.lecturer_note ?? appeal?.lecturerNote;
 
   return (
     <Animated.View
@@ -355,12 +436,15 @@ function RecordRow({ t, record: r, index }) {
 
           {/* Body */}
           <View style={{
-            flex:            1,
-            flexDirection:   'row',
-            alignItems:      'center',
-            gap:             t.spacing.sm,
-            padding:         t.spacing.md,
+            flex:    1,
+            padding: t.spacing.md,
+            gap:     8,
           }}>
+            <View style={{
+              flexDirection: 'row',
+              alignItems:    'center',
+              gap:           t.spacing.sm,
+            }}>
             <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
               <Text
                 numberOfLines={1}
@@ -403,10 +487,323 @@ function RecordRow({ t, record: r, index }) {
             </View>
 
             <StatusPill status={r.status} />
+            </View>
+
+            {/* Appeal status badge — shown once an appeal exists */}
+            {appealCfg && (
+              <View style={{
+                flexDirection:     'row',
+                alignItems:        'center',
+                gap:               6,
+                paddingHorizontal: 10,
+                paddingVertical:   5,
+                borderRadius:      t.radius.atomic,
+                backgroundColor:   appealCfg.bg,
+                alignSelf:         'flex-start',
+                maxWidth:          '100%',
+              }}>
+                <MessageSquare size={11} color={appealCfg.color} strokeWidth={2.4} />
+                <Text style={{
+                  fontFamily: t.fontFamily.bodySemibold,
+                  fontSize:   11,
+                  color:      appealCfg.color,
+                }}>
+                  Appeal {appealCfg.label}
+                </Text>
+                {lecturerNote ? (
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flexShrink: 1,
+                      fontFamily: t.fontFamily.body,
+                      fontSize:   10,
+                      color:      appealCfg.color,
+                      opacity:    0.8,
+                    }}
+                  >
+                    · {lecturerNote}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {/* Appeal button — absent records with no appeal yet */}
+            {canAppeal && (
+              <TouchableOpacity
+                onPress={onAppeal}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection:     'row',
+                  alignItems:        'center',
+                  gap:               6,
+                  paddingHorizontal: 12,
+                  paddingVertical:   6,
+                  borderRadius:      t.radius.atomic,
+                  backgroundColor:   'rgba(245,158,11,0.10)',
+                  borderWidth:       1,
+                  borderColor:       'rgba(245,158,11,0.25)',
+                  alignSelf:         'flex-start',
+                }}
+              >
+                <MessageSquare size={13} color={t.colors.amber} strokeWidth={2.4} />
+                <Text style={{
+                  fontFamily: t.fontFamily.bodySemibold,
+                  fontSize:   12,
+                  color:      t.colors.amber,
+                }}>
+                  Submit appeal
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Card>
     </Animated.View>
+  );
+}
+
+// ─── Appeal modal ──────────────────────────────────────────────
+function AppealModal({ t, record, onClose, onSuccess }) {
+  const [reason,     setReason]     = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error,      setError]      = useState('');
+
+  const MIN_CHARS = 20;
+  const valid = reason.trim().length >= MIN_CHARS;
+
+  const sessionId = record.sessionId ?? record.session_id;
+
+  const handleSubmit = async () => {
+    if (!valid || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      // The server keys the appeal off sessionId and resolves the
+      // attendance row itself, so that's the only id it needs.
+      const res = await api.post('/appeals', {
+        sessionId,
+        reason: reason.trim(),
+      });
+      const d = res.data;
+      const appeal = d?.appeal
+                  ?? d?.data?.appeal
+                  ?? { status: 'pending', reason: reason.trim() };
+      onSuccess(sessionId, appeal);
+    } catch (err) {
+      setError(
+        err.response?.data?.message
+        || 'Failed to submit appeal. Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        {/* Backdrop */}
+        <Pressable
+          onPress={onClose}
+          style={{
+            flex:            1,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            justifyContent:  'flex-end',
+          }}
+        >
+          {/* Sheet — the no-op press stops backdrop taps closing it */}
+          <Pressable
+            onPress={() => {}}
+            style={{
+              backgroundColor:      t.colors.bgCard,
+              borderTopLeftRadius:  24,
+              borderTopRightRadius: 24,
+              paddingHorizontal:    t.spacing.md,
+              paddingTop:           t.spacing.md,
+              paddingBottom:        t.spacing.xl ?? 32,
+              gap:                  t.spacing.md,
+            }}
+          >
+            {/* Grab handle */}
+            <View style={{
+              width:           36,
+              height:          4,
+              borderRadius:    2,
+              backgroundColor: t.colors.border,
+              alignSelf:       'center',
+              marginBottom:    4,
+            }} />
+
+            {/* Header */}
+            <View style={{
+              flexDirection:  'row',
+              alignItems:     'flex-start',
+              justifyContent: 'space-between',
+            }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{
+                  fontFamily: t.fontFamily.displayBold,
+                  fontSize:   t.fontSize.lg,
+                  color:      t.colors.textPrimary,
+                }}>
+                  Submit appeal
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    fontFamily: t.fontFamily.body,
+                    fontSize:   t.fontSize.xs,
+                    color:      t.colors.textMuted,
+                  }}
+                >
+                  {record.className} · {record.sessionTitle || 'Attendance session'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+                <X size={20} color={t.colors.textMuted} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Info callout */}
+            <View style={{
+              flexDirection:   'row',
+              gap:             10,
+              padding:         t.spacing.sm,
+              backgroundColor: 'rgba(245,158,11,0.08)',
+              borderRadius:    t.radius.atomic,
+              borderWidth:     1,
+              borderColor:     'rgba(245,158,11,0.2)',
+            }}>
+              <AlertTriangle
+                size={14}
+                color={t.colors.amber}
+                strokeWidth={2.2}
+                style={{ marginTop: 1 }}
+              />
+              <Text style={{
+                flex:       1,
+                fontFamily: t.fontFamily.body,
+                fontSize:   t.fontSize.xs,
+                color:      t.colors.textSecondary,
+                lineHeight: 18,
+              }}>
+                Your lecturer will review this appeal and update your attendance
+                status if approved. You will be notified of the outcome.
+              </Text>
+            </View>
+
+            {/* Reason */}
+            <View style={{ gap: 8 }}>
+              <Text style={{
+                fontFamily: t.fontFamily.bodySemibold,
+                fontSize:   t.fontSize.sm,
+                color:      t.colors.textPrimary,
+              }}>
+                Reason for appeal <Text style={{ color: t.colors.red }}>*</Text>
+              </Text>
+              <TextInput
+                value={reason}
+                onChangeText={setReason}
+                placeholder={'Explain why your attendance status should be changed — technical issues, you were present but could not scan, or any other valid reason.'}
+                placeholderTextColor={t.colors.textMuted}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+                style={{
+                  fontFamily:      t.fontFamily.body,
+                  fontSize:        t.fontSize.sm,
+                  color:           t.colors.textPrimary,
+                  backgroundColor: t.colors.bgRaised,
+                  borderWidth:     1,
+                  borderColor:     reason.length > 0 && !valid
+                    ? t.colors.red
+                    : t.colors.border,
+                  borderRadius:    t.radius.atomic,
+                  padding:         t.spacing.sm,
+                  minHeight:       130,
+                  lineHeight:      20,
+                }}
+              />
+              <Text style={{
+                fontFamily: t.fontFamily.mono,
+                fontSize:   10,
+                color:      valid ? t.colors.green : t.colors.textMuted,
+              }}>
+                {reason.trim().length}/{MIN_CHARS} characters minimum{valid ? ' ✓' : ''}
+              </Text>
+            </View>
+
+            {/* Error */}
+            {error ? (
+              <Text style={{
+                fontFamily: t.fontFamily.body,
+                fontSize:   t.fontSize.xs,
+                color:      t.colors.red,
+              }}>
+                {error}
+              </Text>
+            ) : null}
+
+            {/* Actions */}
+            <View style={{ flexDirection: 'row', gap: t.spacing.sm }}>
+              <TouchableOpacity
+                onPress={onClose}
+                style={{
+                  flex:           1,
+                  paddingVertical: 13,
+                  borderRadius:   t.radius.atomic,
+                  borderWidth:    1,
+                  borderColor:    t.colors.border,
+                  alignItems:     'center',
+                }}
+              >
+                <Text style={{
+                  fontFamily: t.fontFamily.bodySemibold,
+                  fontSize:   t.fontSize.sm,
+                  color:      t.colors.textSecondary,
+                }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={!valid || submitting}
+                style={{
+                  flex:            2,
+                  paddingVertical: 13,
+                  borderRadius:    t.radius.atomic,
+                  backgroundColor: valid && !submitting
+                    ? t.colors.brand
+                    : t.colors.bgRaised,
+                  alignItems:      'center',
+                  flexDirection:   'row',
+                  justifyContent:  'center',
+                  gap:             8,
+                  opacity:         valid && !submitting ? 1 : 0.5,
+                }}
+              >
+                <Send
+                  size={15}
+                  color={valid && !submitting ? '#fff' : t.colors.textMuted}
+                  strokeWidth={2.2}
+                />
+                <Text style={{
+                  fontFamily: t.fontFamily.bodySemibold,
+                  fontSize:   t.fontSize.sm,
+                  color:      valid && !submitting ? '#fff' : t.colors.textMuted,
+                }}>
+                  {submitting ? 'Submitting…' : 'Submit appeal'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

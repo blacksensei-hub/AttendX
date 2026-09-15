@@ -165,6 +165,53 @@ exports.closeSession = async (req, res) => {
 
     await session.update({ status: 'closed', closed_at: new Date() });
 
+    // Backfill 'absent' rows for every enrolled student who never scanned.
+    //
+    // Previously, closing a session only updated its status — no
+    // attendance row was ever written for students who didn't scan.
+    // notifySessionClosed's statusMap defaulted missing students to
+    // 'absent' purely for the CLOSING EMAIL's wording; that label was
+    // never persisted. The practical effect: absence was invisible
+    // everywhere that reads the attendance table — student history,
+    // lecturer reports, at-risk detection — all of which only ever saw
+    // present/late rows and had no record that anyone was absent at all.
+    //
+    // Wrapped in try/catch: a failure here must never prevent the
+    // session from closing, since the status update above already
+    // succeeded and is the more important write.
+    try {
+      const enrollments = await Enrollment.findAll({
+        where: { class_id: session.class_id },
+        attributes: ['student_id'],
+      });
+
+      const existing = await Attendance.findAll({
+        where: { session_id: sessionId },
+        attributes: ['student_id'],
+      });
+      const alreadyMarked = new Set(existing.map(a => a.student_id));
+
+      const absentees = enrollments
+        .map(e => e.student_id)
+        .filter(studentId => !alreadyMarked.has(studentId));
+
+      if (absentees.length > 0) {
+        await Attendance.bulkCreate(
+          absentees.map(studentId => ({
+            session_id: sessionId,
+            student_id: studentId,
+            status:     'absent',
+            marked_at:  session.closed_at ?? new Date(),
+          }))
+        );
+        console.log(
+          `[Session] Backfilled ${absentees.length} absent record(s) for session ${sessionId}`
+        );
+      }
+    } catch (backfillErr) {
+      console.error('[Session] Absent backfill failed (non-critical):', backfillErr.message);
+    }
+
     req.app.get('io')
       ?.to(`session:${sessionId}`)
       .emit('session:closed', { sessionId });

@@ -1,9 +1,8 @@
 // mobile/src/components/notifications/NotificationBell.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, Pressable, Modal, ScrollView,
+  View, Text, Pressable, Modal, ScrollView, Dimensions,
 }                                                    from 'react-native';
-import { SafeAreaView }                              from 'react-native-safe-area-context';
 import Animated, {
   FadeIn, FadeOut, FadeInUp,
 }                                                    from 'react-native-reanimated';
@@ -85,6 +84,13 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
 
+  // Position of the dropdown panel, computed from the bell button's
+  // actual on-screen location the moment it's tapped — see handleOpen.
+  // Sensible fallback before the first measurement so nothing renders
+  // off-screen if open somehow becomes true before a measure completes.
+  const bellRef = useRef(null);
+  const [anchor, setAnchor] = useState({ top: 70, right: 16 });
+
   const fetchNotifications = useCallback(async () => {
     try {
       const { data } = await api.get('/notifications');
@@ -131,8 +137,22 @@ export default function NotificationBell() {
     };
   }, [fetchNotifications]);
 
-  // ── Open the sheet, and mark everything read (mirrors web) ──────
+  // ── Open the dropdown, anchored under the bell, and mark all read ──
+  // measureInWindow gives the bell's actual on-screen position at tap
+  // time — more reliable than a fixed offset, since the bell's position
+  // can vary by screen (different header layouts) or device size.
   const handleOpen = () => {
+    bellRef.current?.measureInWindow((x, y, width, height) => {
+      const screenWidth = Dimensions.get('window').width;
+      setAnchor({
+        top:   y + height + 8,
+        // Distance from the RIGHT edge of the screen to the bell's right
+        // edge, so the panel's right side lines up with the bell's right
+        // side regardless of where exactly the bell sits.
+        right: Math.max(12, screenWidth - (x + width)),
+      });
+    });
+
     setOpen(true);
     if (unreadCount > 0) {
       api.put('/notifications/read-all')
@@ -158,7 +178,13 @@ export default function NotificationBell() {
   return (
     <>
       {/* ── Bell button ─────────────────────────────────── */}
+      {/* collapsable={false} is needed on Android for measureInWindow to
+          reliably resolve this view's real on-screen position — without
+          it, Android can collapse simple wrapper views out of the
+          native tree entirely. */}
       <Pressable
+        ref={bellRef}
+        collapsable={false}
         onPress={handleOpen}
         hitSlop={8}
         style={{
@@ -205,7 +231,15 @@ export default function NotificationBell() {
         )}
       </Pressable>
 
-      {/* ── Bottom sheet ────────────────────────────────── */}
+      {/* ── Dropdown panel, anchored under the bell ─────── */}
+      {/* A transparent full-screen Modal is still the mechanism — it's
+          what lets a tap anywhere outside the panel close it, and
+          renders above the tab bar/nav chrome. What changed is the
+          panel itself: instead of a bottom sheet pinned via
+          justifyContent:'flex-end', it's a small card positioned with
+          `position: absolute` at the coordinates computed in handleOpen,
+          landing just under and right-aligned with the bell — the same
+          placement the web version's dropdown uses. */}
       <Modal
         visible={open}
         transparent
@@ -214,22 +248,27 @@ export default function NotificationBell() {
       >
         <Pressable
           onPress={() => setOpen(false)}
-          style={{
-            flex:            1,
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            justifyContent:  'flex-end',
-          }}
+          style={{ flex: 1 }}
         >
-          <Pressable onPress={() => {}}>
-            <SafeAreaView
-              edges={['bottom']}
-              style={{
-                backgroundColor:      t.colors.bgCard,
-                borderTopLeftRadius:  24,
-                borderTopRightRadius: 24,
-                maxHeight:            '75%',
-              }}
-            >
+          <Pressable
+            onPress={() => {}}
+            style={{
+              position:             'absolute',
+              top:                  anchor.top,
+              right:                anchor.right,
+              width:                340,
+              maxWidth:             '88%',
+              maxHeight:            '65%',
+              backgroundColor:      t.colors.bgCard,
+              borderRadius:         t.radius.molecular,
+              overflow:             'hidden',
+              shadowColor:          '#000',
+              shadowOpacity:        0.35,
+              shadowRadius:         20,
+              shadowOffset:         { width: 0, height: 10 },
+              elevation:            16,
+            }}
+          >
               {/* Header */}
               <View style={{
                 flexDirection:   'row',
@@ -311,7 +350,6 @@ export default function NotificationBell() {
                   ))}
                 </ScrollView>
               )}
-            </SafeAreaView>
           </Pressable>
         </Pressable>
       </Modal>

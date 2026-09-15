@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "attendx",
+    "icon": "./assets/logo-full.png",
     "plugins": [
       "expo-router",
       "expo-camera",

@@ -46,7 +46,7 @@ import {
  *   • Reads stable deviceId → lets the backend detect proxy attendance
  *     (many different accounts marking from one physical device)
  *   • POST /attendance/mark with { sessionId, qrToken, location, deviceId }
- *   • Show result card → on success, redirect after 2.5s
+ *   • Show result card → on success, redirect after 6s
  * ═════════════════════════════════════════════════════════════════
  */
 export default function ScanScreen() {
@@ -60,16 +60,31 @@ export default function ScanScreen() {
   const hasScanned = useRef(false);
 
   // expo-camera's native preview can come back black on remount under
-  // React Native's New Architecture (the only mode Expo Go supports from
-  // SDK 52+) — see https://github.com/expo/expo/issues/31597. Forcing a
-  // fresh CameraView instance (via a changing `key`) every time this
-  // screen regains focus is kept as a defensive remount: it did not fix
-  // the black preview (that issue is upstream and cosmetic — scanning
-  // and attendance-marking work regardless), but it costs nothing and
-  // guards against genuine stale-preview cases on remount.
+  // React Native's New Architecture — see expo/expo#31597. That report's
+  // own description is specific: "the second time the camera mounts the
+  // preview does not start up" — it's a SECOND-mount bug, not a general
+  // remount bug.
+  //
+  // useFocusEffect fires on the very first focus too, not only on return
+  // visits. An earlier version of this fix bumped cameraKey unconditionally
+  // on every focus, which — on a screen's first-ever visit — immediately
+  // unmounted the initial CameraView and mounted a second one, forcing
+  // exactly the failure condition the upstream bug describes, on every
+  // fresh navigation. hasFocusedBefore tracks whether this screen has
+  // already been focused at least once, so the key only bumps on genuine
+  // RETURN visits (navigate away, then back) — where the camera really
+  // has been through a prior mount/unmount cycle and remounting is the
+  // correct recovery. The very first visit leaves the initial CameraView
+  // alone rather than manufacturing a second mount for no reason.
   const [cameraKey, setCameraKey] = useState(0);
+  const hasFocusedBefore = useRef(false);
+
   useFocusEffect(
     useCallback(() => {
+      if (!hasFocusedBefore.current) {
+        hasFocusedBefore.current = true;
+        return;
+      }
       setCameraKey((k) => k + 1);
     }, [])
   );
@@ -470,7 +485,6 @@ const s = StyleSheet.create({
     shadowRadius:    8,
     elevation:       6,
   },
-
   bottom: {
     padding:       24,
     paddingBottom: 64,

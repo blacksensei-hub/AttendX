@@ -520,16 +520,34 @@ function ScanRow({ t, record, isHighlighted }) {
           </View>
 
           <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-            <Text
-              numberOfLines={1}
-              style={{
-                fontFamily: t.fontFamily.bodySemibold,
-                fontSize:   t.fontSize.sm,
-                color:      t.colors.textPrimary,
-              }}
-            >
-              {record.studentName ?? 'Unknown student'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontFamily: t.fontFamily.bodySemibold,
+                  fontSize:   t.fontSize.sm,
+                  color:      t.colors.textPrimary,
+                }}
+              >
+                {record.studentName ?? 'Unknown student'}
+              </Text>
+              {/* Already present on every record — both the socket
+                  payload and GET /sessions/:id/attendance include it —
+                  just never rendered here before. */}
+              {record.studentId_display && (
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    fontFamily: t.fontFamily.mono,
+                    fontSize:   t.fontSize.xs,
+                    color:      t.colors.textMuted,
+                    flexShrink: 1,
+                  }}
+                >
+                  {record.studentId_display}
+                </Text>
+              )}
+            </View>
             {record.marked_at && (
               <Text style={{
                 fontFamily: t.fontFamily.mono,

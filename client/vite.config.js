@@ -20,53 +20,33 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 600,
 
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return;
+        // Long-lived libraries get their own chunks so they stay cached
+        // across deploys. Each group also claims the modules its library
+        // depends on, so priority decides who gets a shared one: the
+        // core every page needs goes first, which stops a heavy
+        // page-specific chunk (charts, maps, QR) from swallowing React
+        // and then being preloaded on every page, the landing included.
+        codeSplitting: {
+          groups: [
+            { name: 'react-vendor', priority: 30, test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
 
-          // React core
-          if (id.includes('react-dom')           ||
-              id.includes('react-router-dom')    ||
-              id.includes('react/jsx-runtime')   ||
-              id.match(/[\\/]node_modules[\\/]react[\\/]/)) {
-            return 'react-vendor';
-          }
+            { name: 'motion',   priority: 20, test: /node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/ },
+            { name: 'query',    priority: 20, test: /node_modules[\\/]@tanstack[\\/]/ },
+            { name: 'http',     priority: 20, test: /node_modules[\\/]axios[\\/]/ },
+            { name: 'store',    priority: 20, test: /node_modules[\\/]zustand[\\/]/ },
+            { name: 'icons',    priority: 20, test: /node_modules[\\/]lucide-react[\\/]/ },
+            { name: 'toast',    priority: 20, test: /node_modules[\\/]react-hot-toast[\\/]/ },
+            { name: 'forms',    priority: 20, test: /node_modules[\\/](react-hook-form|@hookform|zod)[\\/]/ },
+            { name: 'dates',    priority: 20, test: /node_modules[\\/]date-fns[\\/]/ },
+            { name: 'realtime', priority: 20, test: /node_modules[\\/](socket\.io-client|engine\.io-client|socket\.io-parser|engine\.io-parser)[\\/]/ },
 
-          // Charting
-          if (id.includes('recharts')) return 'charts';
-          if (id.includes('d3-'))      return 'd3';
-
-          // Animation
-          if (id.includes('framer-motion')) return 'motion';
-
-          // Data
-          if (id.includes('@tanstack/react-query')) return 'query';
-          if (id.includes('axios'))                 return 'http';
-          if (id.includes('zustand'))               return 'store';
-
-          // UI
-          if (id.includes('lucide-react'))     return 'icons';
-          if (id.includes('react-hot-toast'))  return 'toast';
-
-          // QR
-          if (id.includes('html5-qrcode') || id.includes('qrcode')) return 'qr';
-
-          // Maps
-          if (id.includes('leaflet') || id.includes('mapbox')) return 'maps';
-
-          // Date
-          if (id.includes('date-fns') || id.includes('dayjs') || id.includes('moment')) {
-            return 'dates';
-          }
-
-          // Socket.io / realtime
-          if (id.includes('socket.io')) return 'realtime';
-
-          // Form handling
-          if (id.includes('react-hook-form') || id.includes('formik')) return 'forms';
-
-          return 'vendor';
+            // Only some pages need these; they load with those pages.
+            { name: 'charts',   priority: 10, test: /node_modules[\\/](recharts|victory-vendor|d3-[a-z-]+)[\\/]/ },
+            { name: 'maps',     priority: 10, test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/ },
+            { name: 'qr',       priority: 10, test: /node_modules[\\/](html5-qrcode|qrcode[a-z.-]*)[\\/]/ },
+          ],
         },
       },
     },

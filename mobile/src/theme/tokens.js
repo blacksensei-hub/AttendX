@@ -64,14 +64,14 @@ export const fontWeight = {
 
 // PostScript names of the loaded fonts (match expo-font keys)
 export const fontFamily = {
-  display:       'Bricolage-SemiBold',
-  displayBold:   'Bricolage-Bold',
-  body:          'Figtree',
-  bodyMedium:    'Figtree-Medium',
-  bodySemibold:  'Figtree-SemiBold',
-  bodyBold:      'Figtree-Bold',
-  mono:          'PlexMono',
-  monoBold:      'PlexMono-SemiBold',
+  display:       'Montserrat-SemiBold',
+  displayBold:   'Montserrat-Bold',
+  body:          'Inter',
+  bodyMedium:    'Inter-Medium',
+  bodySemibold:  'Inter-SemiBold',
+  bodyBold:      'Inter-Bold',
+  mono:          'JetBrainsMono',
+  monoBold:      'JetBrainsMono-SemiBold',
 };
 
 export const lineHeight = {

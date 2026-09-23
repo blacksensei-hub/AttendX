@@ -46,6 +46,9 @@ export const ROUTE_IMPORTS = {
   '/admin/users':        () => import('../pages/admin/Users'),
   '/admin/classes':      () => import('../pages/admin/AdminClasses'),
   '/admin/sessions':     () => import('../pages/admin/AdminSessions'),
+  '/admin/at-risk':      () => import('../pages/admin/AtRisk'),
+  '/admin/heatmap':      () => import('../pages/admin/Heatmap'),
+  '/admin/audit':        () => import('../pages/admin/AuditLog'),
 };
 
 // Tracks which routes have already been prefetched in this session

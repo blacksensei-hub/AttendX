@@ -1,9 +1,9 @@
 import { useState, useMemo }                        from 'react';
-import { useQuery, useMutation, useQueryClient }    from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { motion, AnimatePresence }                  from 'framer-motion';
 import { format }                                   from 'date-fns';
 import {
-  Trash2, AlertTriangle, Download, Search, Filter,
+  Download, Search, Filter,
   ChevronLeft, ChevronRight, X, MessageSquare,
 }                                                   from 'lucide-react';
 import toast                                        from 'react-hot-toast';
@@ -29,7 +29,6 @@ const PAGE_SIZE = 20;
  *   • Active filter pills with individual clear
  *   • One-click CSV export (respects current filters)
  *   • Inline appeal submission for Late/Absent records
- *   • Bulk clear-all with confirmation
  * ═════════════════════════════════════════════════════════════════
  */
 export default function AttendanceHistoryPage() {
@@ -40,7 +39,6 @@ export default function AttendanceHistoryPage() {
   const [from,        setFrom]        = useState('');
   const [to,          setTo]          = useState('');
   const [page,        setPage]        = useState(1);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [exporting,   setExporting]   = useState(false);
   const [appealModal, setAppealModal] = useState(null);
 
@@ -54,7 +52,7 @@ export default function AttendanceHistoryPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['attendance-history', status, from, to, page],
     queryFn:  () => api.get(`/reports/student-history?${params}`).then(r => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,   // v5 spelling; keeps the list on screen while paging
   });
 
   const { data: appealsData } = useQuery({
@@ -62,7 +60,7 @@ export default function AttendanceHistoryPage() {
     queryFn:  () => api.get('/appeals/my').then(r => r.data),
   });
 
-  const records    = data?.records    ?? [];
+  const records    = useMemo(() => data?.records ?? [], [data]);
   const total      = data?.total      ?? 0;
   const totalPages = data?.totalPages ?? 1;
 
@@ -87,20 +85,6 @@ export default function AttendanceHistoryPage() {
   const clearFilters = () => {
     setSearch(''); setStatus(''); setFrom(''); setTo(''); setPage(1);
   };
-
-  // ── Mutations ────────────────────────────────────────────────
-  const clearMut = useMutation({
-    mutationFn: () => api.delete('/reports/student-history').then(r => r.data),
-    onSuccess:  (res) => {
-      toast.success(res.message || 'History cleared');
-      qc.invalidateQueries({ queryKey: ['attendance-history'] });
-      qc.invalidateQueries({ queryKey: ['student-stats'] });
-      setShowConfirm(false);
-      setPage(1);
-    },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || 'Failed to clear history'),
-  });
 
   // ── Export CSV ───────────────────────────────────────────────
   const exportCSV = async () => {
@@ -159,108 +143,9 @@ export default function AttendanceHistoryPage() {
               Export CSV
             </motion.button>
 
-            {total > 0 && (
-              <motion.button
-                whileTap={TAP.button}
-                whileHover={{ y: -1 }}
-                transition={SPRING.snappy}
-                onClick={() => setShowConfirm(true)}
-                className="btn-danger"
-                style={{ fontSize: 'var(--text-xs)' }}
-              >
-                <Trash2 size={13} />
-                Clear all
-              </motion.button>
-            )}
           </div>
         }
       />
-
-      {/* ── Clear confirmation ─────────────────────────────── */}
-      <AnimatePresence>
-        {showConfirm && (
-          <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{    opacity: 0, y: -8, scale: 0.97 }}
-            transition={SPRING.snappy}
-            style={{
-              background:   'var(--red-bg)',
-              border:       '1px solid var(--red-border)',
-              borderRadius: 'var(--radius-molecular)',
-              padding:      'var(--space-3)',
-              boxShadow:    'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
-              <div style={{
-                width: '36px', height: '36px',
-                borderRadius: 'var(--radius-atomic)',
-                background:   'var(--red-bg)',
-                border:       '1px solid var(--red-border)',
-                flexShrink:   0,
-                display:      'flex',
-                alignItems:   'center',
-                justifyContent: 'center',
-              }}>
-                <AlertTriangle size={16} style={{ color: 'var(--red)' }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{
-                  color:        'var(--text-primary)',
-                  fontWeight:   600,
-                  fontFamily:   'var(--font-display)',
-                  fontSize:     'var(--text-sm)',
-                  marginBottom: '4px',
-                }}>
-                  Clear all attendance history?
-                </p>
-                <p style={{
-                  color:      'var(--text-secondary)',
-                  fontSize:   'var(--text-xs)',
-                  lineHeight: 1.6,
-                  marginBottom: 'var(--space-2)',
-                }}>
-                  This permanently deletes all {total} record{total !== 1 ? 's' : ''}. This cannot be undone.
-                </p>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <motion.button
-                    whileTap={TAP.button}
-                    onClick={() => clearMut.mutate()}
-                    disabled={clearMut.isPending}
-                    style={{
-                      display:      'flex',
-                      alignItems:   'center',
-                      gap:          '6px',
-                      padding:      '8px 14px',
-                      background:   'var(--red)',
-                      color:        '#fff',
-                      border:       'none',
-                      borderRadius: 'var(--radius-atomic)',
-                      fontSize:     'var(--text-xs)',
-                      fontWeight:   600,
-                      cursor:       clearMut.isPending ? 'not-allowed' : 'pointer',
-                      opacity:      clearMut.isPending ? 0.7 : 1,
-                      fontFamily:   'var(--font-body)',
-                    }}
-                  >
-                    <Trash2 size={12} />
-                    {clearMut.isPending ? 'Clearing…' : 'Yes, clear all'}
-                  </motion.button>
-                  <motion.button
-                    whileTap={TAP.button}
-                    onClick={() => setShowConfirm(false)}
-                    className="btn-ghost"
-                    style={{ padding: '8px 14px', fontSize: 'var(--text-xs)' }}
-                  >
-                    Cancel
-                  </motion.button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── Filters panel ───────────────────────────────────── */}
       <div style={{

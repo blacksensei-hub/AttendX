@@ -456,9 +456,20 @@ function MapFlyController({ view }) {
 }
 
 // ─── Active session card ─────────────────────────────────────
+// Re-renders every 30s so "open for N min" keeps counting.
+function useNow(intervalMs = 30000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
 function ActiveSessionCard({ classroom, isPulsing }) {
+  const now = useNow();
   const elapsed = classroom.activeSession?.openedAt
-    ? Math.floor((Date.now() - new Date(classroom.activeSession.openedAt)) / 60000)
+    ? Math.max(0, Math.floor((now - new Date(classroom.activeSession.openedAt)) / 60000))
     : 0;
   return (
     <div style={{

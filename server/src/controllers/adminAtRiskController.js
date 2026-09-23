@@ -24,7 +24,7 @@ exports.getAtRisk = async (req, res) => {
       }),
       Session.findAll({
         where:      { status: 'closed' },
-        attributes: ['id', 'class_id', 'created_at'],
+        attributes: ['id', 'class_id', 'open_at', 'created_at'],
         order:      [['created_at', 'DESC']],
       }),
       Enrollment.findAll({
@@ -84,14 +84,22 @@ exports.getAtRisk = async (req, res) => {
       if (classSessions.length === 0) continue;
 
       const threshold     = Number(cls.attendance_threshold) || 75;
-      const totalSessions = classSessions.length;
       const className     = cls.name || cls.title || `Class ${cls.id}`;
 
       for (const enr of classEnrollments) {
         if (!enr.student || !enr.student.is_active) continue;
 
+        // Only sessions held after this student enrolled can count
+        // against them.
+        const enrolledAt    = enr.enrolled_at ? new Date(enr.enrolled_at) : null;
+        const mySessions    = enrolledAt
+          ? classSessions.filter(s => new Date(s.open_at) >= enrolledAt)
+          : classSessions;
+        const totalSessions = mySessions.length;
+        if (totalSessions === 0) continue;
+
         const attendedSet   = attendedByStudent.get(enr.student.id) || new Set();
-        const attendedCount = classSessions.filter(s => attendedSet.has(s.id)).length;
+        const attendedCount = mySessions.filter(s => attendedSet.has(s.id)).length;
         const percentage    = Math.round((attendedCount / totalSessions) * 1000) / 10;
 
         const studentInfo = {
@@ -121,7 +129,7 @@ exports.getAtRisk = async (req, res) => {
 
         if (totalSessions >= DROPOUT_CONSECUTIVE) {
           let consecutiveMissed = 0;
-          for (const s of classSessions) {
+          for (const s of mySessions) {
             if (!attendedSet.has(s.id)) consecutiveMissed++;
             else break;
           }
@@ -129,7 +137,7 @@ exports.getAtRisk = async (req, res) => {
             recentDropouts.push({
               ...studentInfo,
               consecutiveMissed,
-              lastMissedDate: classSessions[0].created_at,
+              lastMissedDate: mySessions[0].created_at,
             });
           }
         }

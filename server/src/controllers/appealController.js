@@ -198,16 +198,16 @@ exports.reviewAppeal = async (req, res) => {
     // If approved — update or create the attendance record using the
     // lecturer's explicitly chosen status (present or late)
     if (decision === 'approved') {
-      if (appeal.attendance_id) {
-        // Student already had an attendance record (e.g. was late) —
-        // update it to the lecturer's chosen status
-        await Attendance.update(
-          { status },
-          { where: { id: appeal.attendance_id } }
-        );
+      // Look the row up by session + student rather than trusting the
+      // attendance_id captured when the appeal was filed: a row can be
+      // written after that (an absence recorded at close, a lecturer
+      // adjustment), and blindly creating one then hit the unique index.
+      const existingRow = await Attendance.findOne({
+        where: { session_id: appeal.session_id, student_id: appeal.student_id },
+      });
+      if (existingRow) {
+        await existingRow.update({ status });
       } else {
-        // Student was fully absent — create a brand new attendance record
-        // with the lecturer's chosen status
         await Attendance.create({
           session_id: appeal.session_id,
           student_id: appeal.student_id,

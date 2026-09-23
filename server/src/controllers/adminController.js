@@ -2,6 +2,7 @@
 const { User, Class, Session, Attendance, Enrollment } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const { Op } = require('sequelize');
+const { finalizeClose } = require('../services/sessionLifecycle');
 
 // ── System-wide dashboard stats ───────────────────────────────
 exports.getDashboardStats = async (req, res) => {
@@ -200,14 +201,17 @@ exports.forceCloseSession = async (req, res) => {
     const session = await Session.findByPk(req.params.id);
     if (!session) return res.status(404).json(error('Session not found'));
 
-    await session.update({ status: 'closed', closed_at: new Date() });
+    if (session.status === 'closed') {
+      return res.json(success({ session }, 'Session was already closed'));
+    }
 
-    req.app.get('io')
-      ?.to(`session:${session.id}`)
-      .emit('session:closed', { sessionId: session.id });
+    await session.update({ status: 'closed', closed_at: new Date() });
+    const cls = await Class.findByPk(session.class_id);
+    await finalizeClose(session, { cls, io: req.app.get('io') });
 
     return res.json(success({ session }, 'Session force-closed'));
   } catch (err) {
+    console.error('[Admin] forceCloseSession error:', err);
     return res.status(500).json(error('Server error'));
   }
 };

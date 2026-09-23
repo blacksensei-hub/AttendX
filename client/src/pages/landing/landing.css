@@ -128,12 +128,12 @@
   pointer-events: none;
   z-index: -1;
   opacity: calc(.25 + .75 * var(--k, 1));
-  background: radial-gradient(ellipse 66% 62% at 40% 50%, rgba(4, 7, 18, .8) 0%, rgba(4, 7, 18, .62) 48%, rgba(4, 7, 18, 0) 78%);
+  background: radial-gradient(ellipse 66% 62% at 40% 50%, rgba(4, 7, 18, .86) 0%, rgba(4, 7, 18, .68) 48%, rgba(4, 7, 18, 0) 78%);
 }
 /* The hook and the settle sit over the brightest particles: a deeper peak */
 .band.is-first::before,
 .band.fx-stage::before {
-  background: radial-gradient(ellipse 66% 62% at 40% 50%, rgba(4, 7, 18, .86) 0%, rgba(4, 7, 18, .68) 48%, rgba(4, 7, 18, 0) 78%);
+  background: radial-gradient(ellipse 66% 62% at 40% 50%, rgba(4, 7, 18, .9) 0%, rgba(4, 7, 18, .72) 48%, rgba(4, 7, 18, 0) 78%);
 }
 .band .btn-accent, .band .btn-ghost { text-shadow: none; pointer-events: auto; }
 .band .kicker { color: var(--on-night-3); }
@@ -286,6 +286,8 @@
 
 /* ── Sections ────────────────────────────────────────────────── */
 .lp-sec { position: relative; z-index: 1; padding: clamp(80px, 11vw, 160px) var(--gutter); }
+/* Sections take focus after an in-page glide (see anchorScroll.js); no ring on a whole section */
+.lp-sec:focus { outline: none; }
 .lp-wrap { max-width: 1240px; margin: 0 auto; }
 .lp-h2 {
   font-family: var(--font-display);

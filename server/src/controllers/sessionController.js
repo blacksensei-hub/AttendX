@@ -5,56 +5,20 @@ const { Session, Class, Enrollment, Attendance, QRToken, User } = require('../mo
 const { generateToken }          = require('../services/qrService');
 const { success, error }         = require('../utils/apiResponse');
 const { Op }                     = require('sequelize');
-const {
-  sendSessionOpenedEmail,
-  sendSessionClosedEmails,
-} = require('../services/emailService');
+const { sendSessionOpenedEmail } = require('../services/emailService');
+const { finalizeClose }          = require('../services/sessionLifecycle');
 
-// ─── Shared helper: notify students when a session closes ─────
-async function notifySessionClosed(session, cls) {
-  try {
-    const className = cls?.name ?? session.class_name_snapshot ?? 'your class';
-
-    const enrollments = await Enrollment.findAll({
-      where:   { class_id: session.class_id },
-      include: [{ model: User, as: 'student', attributes: ['id', 'name', 'email'] }],
-    });
-
-    const attendanceRecords = await Attendance.findAll({
-      where: { session_id: session.id },
-    });
-
-    const statusMap = {};
-    attendanceRecords.forEach(r => { statusMap[r.student_id] = r.status; });
-
-    const records = enrollments
-      .filter(e => e.student)
-      .map(e => ({
-        studentEmail: e.student.email,
-        studentName:  e.student.name,
-        status:       statusMap[e.student.id] ?? 'absent',
-      }));
-
-    if (records.length === 0) return;
-
-    // Wrapped so an email failure can NEVER fail the request that
-    // triggered this — see the emailService clobber incident notes.
-    try {
-      await sendSessionClosedEmails({
-        className,
-        sessionTitle: session.title,
-        closedAt:     session.closed_at ?? new Date().toISOString(),
-        records,
-      });
-    } catch (err) {
-      console.warn('[Session] Closed email batch skipped:', err.message);
-    }
-  } catch (err) {
-    console.error('[Session] notifySessionClosed error:', err.message);
-  }
+// ─── Ownership ────────────────────────────────────────────────
+// The live QR token, the live roster and the session details are the
+// lecturer's alone. Handing the current QR token to any signed-in user
+// let a student fetch it from home and mark themselves present, which
+// defeats the whole scan-in-the-room design.
+async function findOwnedSession(sessionId, lecturerId) {
+  const session = await Session.findByPk(sessionId);
+  if (!session) return null;
+  const cls = await Class.findOne({ where: { id: session.class_id, lecturer_id: lecturerId } });
+  return cls ? { session, cls } : null;
 }
-
-exports.notifySessionClosed = notifySessionClosed;
 
 // ─── Open session ─────────────────────────────────────────────
 exports.openSession = async (req, res) => {
@@ -165,58 +129,10 @@ exports.closeSession = async (req, res) => {
 
     await session.update({ status: 'closed', closed_at: new Date() });
 
-    // Backfill 'absent' rows for every enrolled student who never scanned.
-    //
-    // Previously, closing a session only updated its status — no
-    // attendance row was ever written for students who didn't scan.
-    // notifySessionClosed's statusMap defaulted missing students to
-    // 'absent' purely for the CLOSING EMAIL's wording; that label was
-    // never persisted. The practical effect: absence was invisible
-    // everywhere that reads the attendance table — student history,
-    // lecturer reports, at-risk detection — all of which only ever saw
-    // present/late rows and had no record that anyone was absent at all.
-    //
-    // Wrapped in try/catch: a failure here must never prevent the
-    // session from closing, since the status update above already
-    // succeeded and is the more important write.
-    try {
-      const enrollments = await Enrollment.findAll({
-        where: { class_id: session.class_id },
-        attributes: ['student_id'],
-      });
-
-      const existing = await Attendance.findAll({
-        where: { session_id: sessionId },
-        attributes: ['student_id'],
-      });
-      const alreadyMarked = new Set(existing.map(a => a.student_id));
-
-      const absentees = enrollments
-        .map(e => e.student_id)
-        .filter(studentId => !alreadyMarked.has(studentId));
-
-      if (absentees.length > 0) {
-        await Attendance.bulkCreate(
-          absentees.map(studentId => ({
-            session_id: sessionId,
-            student_id: studentId,
-            status:     'absent',
-            marked_at:  session.closed_at ?? new Date(),
-          }))
-        );
-        console.log(
-          `[Session] Backfilled ${absentees.length} absent record(s) for session ${sessionId}`
-        );
-      }
-    } catch (backfillErr) {
-      console.error('[Session] Absent backfill failed (non-critical):', backfillErr.message);
-    }
-
-    req.app.get('io')
-      ?.to(`session:${sessionId}`)
-      .emit('session:closed', { sessionId });
-
-    notifySessionClosed(session, cls);
+    // Absences, the live-page socket event and the summary emails all
+    // happen in finalizeClose, shared with auto-close and admin
+    // force-close so every path records who didn't scan.
+    await finalizeClose(session, { cls, io: req.app.get('io') });
 
     return res.json(success({ session: session.toJSON() }, 'Session closed'));
   } catch (err) {
@@ -229,7 +145,8 @@ exports.closeSession = async (req, res) => {
 exports.getCurrentQR = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const session = await Session.findByPk(sessionId);
+    const owned   = await findOwnedSession(sessionId, req.user.id);
+    const session = owned?.session;
     if (!session || session.status !== 'open')
       return res.status(404).json(error('No active session'));
 
@@ -272,10 +189,10 @@ exports.getCurrentQR = async (req, res) => {
 exports.getSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const session = await Session.findByPk(sessionId);
-    if (!session) return res.status(404).json(error('Session not found'));
+    const owned = await findOwnedSession(sessionId, req.user.id);
+    if (!owned) return res.status(404).json(error('Session not found'));
+    const { session, cls } = owned;
 
-    const cls = await Class.findByPk(session.class_id);
     const enrollmentCount = await Enrollment.count({
       where: { class_id: session.class_id },
     });
@@ -297,6 +214,9 @@ exports.getSession = async (req, res) => {
 exports.getLiveAttendance = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    if (!(await findOwnedSession(sessionId, req.user.id)))
+      return res.status(404).json(error('Session not found'));
+
     const records = await Attendance.findAll({
       where:   { session_id: sessionId },
       include: [{ association: 'student', attributes: ['id', 'name', 'email', 'student_id'] }],

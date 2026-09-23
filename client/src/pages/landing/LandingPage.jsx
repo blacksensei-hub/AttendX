@@ -6,6 +6,7 @@ import { ArrowRight, ArrowUpRight }                 from 'lucide-react';
 
 import BrandMark                                    from '../../components/ui/BrandMark';
 import { mountScrubHero }                           from './scrubHero';
+import { mountAnchorScroll }                        from './anchorScroll';
 import './landing.css';
 
 /**
@@ -89,10 +90,12 @@ const reducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function LandingPage() {
+  const rootRef           = useRef(null);
   const heroRef           = useRef(null);
   const [onHero, setOnHero] = useState(true);
 
   useEffect(() => mountScrubHero(heroRef.current), []);
+  useEffect(() => mountAnchorScroll(rootRef.current), []);
 
   // Nav reads light-on-dark while it sits over the hero
   useEffect(() => {
@@ -118,7 +121,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="lp">
+    <div className="lp" ref={rootRef}>
       <a href="#how" className="sr-only">Skip the intro</a>
 
       {/* ── Nav ─────────────────────────────────────────────── */}

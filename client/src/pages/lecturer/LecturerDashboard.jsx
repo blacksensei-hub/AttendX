@@ -52,7 +52,7 @@ export default function LecturerDashboard() {
     queryKey: ['classes'],
     queryFn:  classService.getMyClasses,
   });
-  const classes = classData?.classes ?? [];
+  const classes = useMemo(() => classData?.classes ?? [], [classData]);
 
   const { data: stats, isPending: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -67,12 +67,12 @@ export default function LecturerDashboard() {
     totalStudents:  classes.reduce((a, c) => a + (c.enrollmentCount ?? 0), 0),
     activeSessions: classes.filter(c => c.activeSession).length,
     avgAttendance:  stats?.avgAttendance ?? 0,
-  }), [classes, stats?.avgAttendance]);
+  }), [classes, stats]);
 
   // Stat cards — memoized so AnimatedItem children don't get
   // fresh object refs on every parent render.
   const CARDS = useMemo(() => [
-    { label: 'Avg attendance',  value: `${avgAttendance}%`, tone: 'green',  featured: true, framed: activeSessions === 0, hint: 'Across all your classes, last 14 days' },
+    { label: 'Avg attendance',  value: `${avgAttendance}%`, tone: 'green',  featured: true, framed: activeSessions === 0, hint: 'Every closed session, all your classes' },
     { label: 'Live now',        value: activeSessions,       tone: 'brand',  hint: activeSessions ? 'Sessions taking attendance' : 'No sessions open' },
     { label: 'Students',        value: totalStudents,        tone: 'violet', hint: 'Enrolled across your classes' },
     { label: 'Classes',         value: classes.length,       tone: 'amber',  hint: 'You teach this semester' },
@@ -86,7 +86,7 @@ export default function LecturerDashboard() {
   // anything meaningful.
   const trendData = useMemo(
     () => (Array.isArray(stats?.trend) ? stats.trend : []),
-    [stats?.trend]
+    [stats]
   );
   const hasTrend = trendData.length >= 2;
 
@@ -190,7 +190,7 @@ export default function LecturerDashboard() {
           flexWrap:       'wrap',
           gap:            'var(--space-2)',
         }}>
-          <SectionTitle kicker="Last 14 days / all classes" title="Attendance trend" />
+          <SectionTitle kicker="Last 14 days / days with sessions" title="Attendance trend" />
           {/* Only claim an average once there's real data behind it */}
           {hasTrend && (
             <StatusPill

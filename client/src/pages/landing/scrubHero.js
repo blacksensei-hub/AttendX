@@ -7,7 +7,8 @@
  *
  *   • Streams the video in as a Blob behind a progress ring (hosts
  *     without HTTP Range support would otherwise clamp every seek
- *     to 0), with a 20s no-progress watchdog.
+ *     to 0), with a 20s no-progress watchdog. 1440p for large,
+ *     dense screens on a decent connection, 1080p otherwise.
  *   • Eases the displayed time toward scroll with a frame-rate
  *     independent lerp, and the rAF loop rests once it converges.
  *   • Gates seeks so they never overlap (the difference between
@@ -29,13 +30,28 @@ export const GATES = [
   '(prefers-reduced-motion: reduce)',
 ];
 
-const VIDEO_URL   = '/landing/hero-scrub.mp4';
+// Two encodes of the same 4K master. `bytes` is the fallback for the
+// progress ring when a host omits Content-Length.
+const VIDEOS = {
+  hd:   { url: '/landing/hero-scrub-1440.mp4', bytes: 6624318 },   // 2560×1440
+  full: { url: '/landing/hero-scrub.mp4',      bytes: 5719177 },   // 1920×1080
+};
 const POSTER_URL  = '/landing/hero-poster.jpg';
-const VIDEO_BYTES = 4495774;          // fallback when Content-Length is missing
 const RING_LEN    = 126;              // circumference of r=20
 const SEATS_TOTAL = 231;              // what the HUD counts up to
 
 const clamp      = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// 1440p only where it shows: a screen at least 2000 device pixels
+// wide (a retina laptop, a 1440p monitor) on a connection that isn't
+// flagged as slow or data-saving. Everyone else gets 1080p, which
+// also seeks more cheaply on modest hardware.
+function pickVideo() {
+  const conn = navigator.connection;
+  const slow = conn && (conn.saveData || /(^|-)(2g|3g)$/.test(conn.effectiveType || ''));
+  const wide = window.innerWidth * (window.devicePixelRatio || 1) >= 2000;
+  return wide && !slow ? VIDEOS.hd : VIDEOS.full;
+}
 const smoothstep = (p, e0, e1) => {
   const t = clamp((p - e0) / (e1 - e0), 0, 1);
   return t * t * (3 - 2 * t);
@@ -184,13 +200,13 @@ export function mountScrubHero(hero) {
     stage.classList.remove('video-loading');
   }
 
-  async function loadHeroBlob() {
+  async function loadHeroBlob(source) {
     ctrl = new AbortController();
     let watchdog = later(() => ctrl.abort(), 20000);
     stage.classList.add('video-loading');
-    const res = await fetch(VIDEO_URL, { priority: 'low', signal: ctrl.signal });
+    const res = await fetch(source.url, { priority: 'low', signal: ctrl.signal });
     if (!res.ok || !res.body) throw new Error(`video ${res.status}`);
-    const total  = Number(res.headers.get('Content-Length')) || VIDEO_BYTES;
+    const total  = Number(res.headers.get('Content-Length')) || source.bytes;
     const reader = res.body.getReader();
     const chunks = [];
     let got = 0, lastRing = 0;
@@ -230,11 +246,11 @@ export function mountScrubHero(hero) {
     const start = () => {
       if (started || disposed) return;
       started = true;
-      // One quiet retry before settling on the still poster: phone
-      // networks drop a stream now and then.
-      loadHeroBlob().catch(() => {
+      // One quiet retry, on the lighter file, before settling on the
+      // still poster: networks drop a stream now and then.
+      loadHeroBlob(pickVideo()).catch(() => {
         if (disposed) return;
-        later(() => { if (!disposed) loadHeroBlob().catch(() => failVideo()); }, 1500);
+        later(() => { if (!disposed) loadHeroBlob(VIDEOS.full).catch(() => failVideo()); }, 1500);
       });
     };
     const img   = new Image();

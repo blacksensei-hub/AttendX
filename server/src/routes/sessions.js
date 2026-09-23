@@ -14,8 +14,8 @@ router.post('/', auth, authorize('lecturer'), sessionController.openSession);
 
 // ── Wildcard /:sessionId routes LAST ─────────────────────────
 router.put('/:sessionId/close',      auth, authorize('lecturer'), sessionController.closeSession);
-router.get('/:sessionId/qr',         auth,                        sessionController.getCurrentQR);
-router.get('/:sessionId/attendance', auth,                        sessionController.getLiveAttendance);
-router.get('/:sessionId',            auth,                        sessionController.getSession);
+router.get('/:sessionId/qr',         auth, authorize('lecturer'), sessionController.getCurrentQR);
+router.get('/:sessionId/attendance', auth, authorize('lecturer'), sessionController.getLiveAttendance);
+router.get('/:sessionId',            auth, authorize('lecturer'), sessionController.getSession);
 
 module.exports = router;

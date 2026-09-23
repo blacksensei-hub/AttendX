@@ -51,7 +51,7 @@ export default function ForceLogoutListener() {
       // Stash the reason so the login page can surface it too. A hard
       // reload wipes in-memory toasts, and on a phone the user may not
       // be looking at the screen when this fires.
-      try { sessionStorage.setItem('attendx.logout_reason', reason); } catch {}
+      try { sessionStorage.setItem('attendx.logout_reason', reason); } catch { /* storage blocked: the toast still shows */ }
 
       logout();
 

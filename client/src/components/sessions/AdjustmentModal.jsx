@@ -1,6 +1,5 @@
 import { useState }          from 'react';
-import { useMutation,
-         useQueryClient }    from '@tanstack/react-query';
+import { useMutation }       from '@tanstack/react-query';
 import { motion }            from 'framer-motion';
 import { X, AlertTriangle }  from 'lucide-react';
 import api                   from '../../services/api';

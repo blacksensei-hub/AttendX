@@ -23,7 +23,14 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Core no-unused-vars can't see identifiers used as JSX tags
+      // (<motion.div>, <Icon />), so exempt framer-motion's `motion`
+      // and capitalised component bindings, including destructured
+      // props like `icon: Icon`.
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^([A-Z_]|motion$)',
+        argsIgnorePattern: '^[A-Z_]',
+      }],
     },
   },
 ])

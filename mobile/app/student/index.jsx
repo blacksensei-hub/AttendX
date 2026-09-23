@@ -319,8 +319,8 @@ function StatsGrid({ t, stats, loading }) {
   const cards = [
     { label: 'This month', value: `${stats.thisMonth ?? 0}%`,  dot: t.colors.greenFill, featured: true },
     { label: 'On time',    value: `${stats.onTimeRate ?? 0}%`, dot: t.colors.amberFill },
-    { label: 'Sessions',   value: stats.totalSessions ?? 0,    dot: t.colors.brand },
-    { label: 'Present',    value: stats.present ?? 0,          dot: t.colors.violet },
+    { label: 'Attended',   value: stats.attended ?? (stats.present ?? 0) + (stats.late ?? 0), dot: t.colors.brand },
+    { label: 'Absent',     value: stats.absent ?? 0,           dot: t.colors.redFill },
   ];
 
   return (

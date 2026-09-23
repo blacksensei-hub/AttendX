@@ -1,4 +1,4 @@
-const { Session, Attendance, Enrollment } = require('../models');
+const { Session, Attendance, Enrollment, QRToken } = require('../models');
 const { validateToken }                   = require('../services/qrService');
 const { isWithinGeofence, isSuspiciousCoordinate } = require('../services/geoService');
 const { success, error }                  = require('../utils/apiResponse');
@@ -26,8 +26,23 @@ exports.markAttendance = async (req, res) => {
   // scan can be told apart from one delayed by backend latency.
   const requestStart = Date.now();
   try {
-    const { sessionId, qrToken, latitude, longitude, deviceId, isMockGps } = req.body;
+    const { qrToken, latitude, longitude, deviceId, isMockGps } = req.body;
     const studentId = req.user.id;
+
+    // 0. Work out which session this scan is for FROM THE TOKEN.
+    //    Every QR token belongs to exactly one session, so the token is
+    //    the source of truth. The sessionId the app sends is only a
+    //    fallback: the mobile Scan tab keeps its old route params, so
+    //    after a lecturer closed and reopened a session the app kept
+    //    sending the closed session's id and every scan failed with
+    //    "no longer active". Scans opened with no id at all failed too.
+    let sessionId = req.body.sessionId;
+    if (qrToken) {
+      const owner = await QRToken.findOne({ where: { token: qrToken }, attributes: ['session_id'] });
+      if (owner) sessionId = owner.session_id;
+    }
+    if (!sessionId)
+      return res.status(400).json(error('QR code not recognised. Scan the code on the screen again.'));
 
     // 1. Confirm the session exists and is still accepting attendance.
     //    We include the 'class' association so we can access geofence
@@ -294,6 +309,12 @@ exports.markAttendance = async (req, res) => {
     // validation helpers. We log the full message for server-side debugging
     // but only send a generic message to the client to avoid leaking
     // implementation details or stack traces to end users.
+    // Two taps (or a double-fired scan) can both pass the duplicate
+    // check in step 3 before either insert lands; the unique index
+    // stops the second. That's a duplicate, not a server fault.
+    if (err.name === 'SequelizeUniqueConstraintError')
+      return res.status(409).json(error('Attendance already marked for this session'));
+
     console.error('MARK ATTENDANCE ERROR:', err.message);
     return res.status(500).json(error('Server error while marking attendance'));
   }

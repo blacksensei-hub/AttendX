@@ -11,6 +11,7 @@ import toast                                 from 'react-hot-toast';
 import BrandMark                             from '../ui/BrandMark';
 import NotificationPanel                     from '../ui/NotificationPanel';
 import NetworkBanner                         from '../NetworkBanner';
+import ImpersonationBanner                   from '../ImpersonationBanner';
 import { useAuthStore }                      from '../../store/authStore';
 import { useUIStore }                        from '../../store/uiStore';
 import { prefetchRoute }                     from '../../router/prefetch';
@@ -56,6 +57,7 @@ const NAV = {
     { label: 'Sessions', to: '/admin/sessions' },
     { label: 'At-risk',  to: '/admin/at-risk' },
     { label: 'Heatmap',  to: '/admin/heatmap' },
+    { label: 'Audit',    to: '/admin/audit' },
   ],
 };
 
@@ -131,6 +133,7 @@ export default function AppShell({ role }) {
     <div style={{ position: 'relative', minHeight: '100dvh', width: '100%' }}>
       <div className="env-layer" aria-hidden="true" />
       <NetworkBanner />
+      <ImpersonationBanner />
       <ScrollRestoration />
 
       <a href="#main" className="skip-link" style={skipLinkStyle}

@@ -1,10 +1,8 @@
 const { Op }     = require('sequelize');
-const { Session, Class, Enrollment, Attendance } = require('../models');
-const {
-  sendSessionClosingSoonEmail,
-  sendSessionClosedEmails,
-} = require('./emailService');
+const { Session, Class, Enrollment } = require('../models');
+const { sendSessionClosingSoonEmail } = require('./emailService');
 const { createNotification } = require('./notificationService');
+const { finalizeClose }      = require('./sessionLifecycle');
 
 // Track which sessions we have already sent the "closing soon" warning for
 // so we don't spam students with repeated warnings on every poll cycle.
@@ -19,8 +17,8 @@ const warnedSessions = new Set();
  * 1. Finds sessions whose close_at time is within 2 minutes and sends
  *    a "closing soon" warning to all enrolled students.
  *
- * 2. Finds sessions whose close_at time has passed and closes them,
- *    then sends a summary email to all enrolled students.
+ * 2. Finds sessions whose close_at time has passed, closes them, and
+ *    runs finalizeClose (absent rows, socket event, summary emails).
  */
 async function runScheduler(io) {
   try {
@@ -102,53 +100,19 @@ async function runScheduler(io) {
       const className = session.class?.name ?? session.class_name_snapshot ?? 'your class';
       console.log(`[Scheduler] Auto-closing session ${session.id} (${className})`);
 
-      // Mark the session as closed in the database
-      await session.update({ status: 'closed', closed_at: now });
-
-      // Notify the lecturer's live session page via WebSocket
-      io?.to(`session:${session.id}`).emit('session:closed', { sessionId: session.id });
-
-      // Remove from warned set since it's now closed
+      // Remove from warned set since it's now closing
       warnedSessions.delete(session.id);
 
-      // Fetch enrolled students and their attendance records
-      const enrollments = await Enrollment.findAll({
-        where:   { class_id: session.class_id },
-        include: [{ association: 'student', attributes: ['id', 'name', 'email'] }],
-      });
-
-      const attendanceRecords = await Attendance.findAll({
-        where: { session_id: session.id },
-      });
-
-      const statusMap = {};
-      attendanceRecords.forEach(r => { statusMap[r.student_id] = r.status; });
-
-      const records = enrollments
-        .filter(e => e.student)
-        .map(e => ({
-          studentEmail: e.student.email,
-          studentName:  e.student.name,
-          status:       statusMap[e.student.id] ?? 'absent',
-        }));
-
-      // Send session closed summary emails — fire and forget.
-      // Guarded for the same reason as the closing-soon batch above: the
-      // session is already closed in the database, and an email problem must
-      // not abort the loop over the remaining sessions.
-      if (records.length > 0) {
-        try {
-          sendSessionClosedEmails({
-            className,
-            sessionTitle: session.title,
-            closedAt:     now.toISOString(),
-            records,
-          }).catch(err =>
-            console.error('[Scheduler] Session closed email error:', err.message)
-          );
-        } catch (err) {
-          console.warn('[Scheduler] Session closed email skipped:', err.message);
-        }
+      // Per-session try/catch: one bad session must not stop the rest
+      // of this cycle from closing.
+      try {
+        await session.update({ status: 'closed', closed_at: now });
+        // Same path as the lecturer's Close button: absent rows for
+        // everyone who didn't scan, the live-page socket event, and
+        // the summary emails.
+        await finalizeClose(session, { cls: session.class, io });
+      } catch (err) {
+        console.error(`[Scheduler] Auto-close failed for session ${session.id}:`, err.message);
       }
     }
 

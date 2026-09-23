@@ -442,13 +442,13 @@ const s = StyleSheet.create({
   topCenter: { alignItems: 'center', gap: 2 },
   topTitle: {
     color:      '#EEF1F7',
-    fontFamily: 'Bricolage-Bold',
+    fontFamily: 'Montserrat-Bold',
     fontSize:   17,
     letterSpacing: -0.4,
   },
   topSubtitle: {
     color:      'rgba(238,241,247,0.56)',
-    fontFamily: 'PlexMono',
+    fontFamily: 'JetBrainsMono',
     fontSize:   10,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
@@ -508,7 +508,7 @@ const s = StyleSheet.create({
   },
   hintText: {
     color:      'rgba(238,241,247,0.85)',
-    fontFamily: 'Figtree',
+    fontFamily: 'Inter',
     fontSize:   13,
     flexShrink: 1,
     lineHeight: 16,
@@ -531,14 +531,14 @@ const s = StyleSheet.create({
 
   resultText: {
     color:      '#EEF1F7',
-    fontFamily: 'Figtree-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontSize:   16,
     textAlign:  'center',
     lineHeight: 20,
   },
   resultSub: {
     color:    'rgba(238,241,247,0.56)',
-    fontFamily: 'PlexMono',
+    fontFamily: 'JetBrainsMono',
     fontSize: 11,
     textAlign:'center',
   },

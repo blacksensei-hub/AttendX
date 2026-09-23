@@ -23,7 +23,7 @@
       "package": "com.attendx.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B1B3F"
+        "backgroundColor": "#FFFFFF"
       }
     },
     "ios": {

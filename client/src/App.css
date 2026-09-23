@@ -15,9 +15,9 @@
    frame the one number or action that matters on a screen.
 
    Fonts (loaded in index.html):
-     display  Bricolage Grotesque  500 / 600 / 700 / 800
-     body     Figtree              400 / 500 / 600 / 700
-     mono     IBM Plex Mono        400 / 500 / 600
+     display  Montserrat       600 / 700 / 800   (matches the logo)
+     body     Inter            400 / 500 / 600 / 700
+     mono     JetBrains Mono   400 / 500 / 600
 
    Light is the default theme. Dark ("lecture hall at night") is a
    full palette, not an inversion.
@@ -28,9 +28,9 @@
   color-scheme: light;
 
   /* ── Typography families ──────────────────────────────────── */
-  --font-display: 'Bricolage Grotesque', 'Figtree', system-ui, sans-serif;
-  --font-body:    'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono:    'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  --font-display: 'Montserrat', 'Inter', system-ui, sans-serif;
+  --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, Consolas, monospace;
 
   /* ── Typography scale ─────────────────────────────────────── */
   --text-xs:   12px;   --leading-xs:   16px;
@@ -286,7 +286,7 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering:          optimizeLegibility;
     font-synthesis:          none;
-    font-feature-settings:   'ss01', 'cv11';
+    font-feature-settings:   'cv05', 'ss03';   /* Inter: tailed l, rounded quotes */
     transition:
       background-color var(--duration-medium) var(--ease-state),
       color            var(--duration-medium) var(--ease-state);

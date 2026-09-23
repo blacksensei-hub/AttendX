@@ -65,6 +65,11 @@ export default function StudentDashboard() {
     queryFn:  () => api.get('/reports/student-stats').then(r => r.data),
   });
   const myStats = statsData ?? {};
+  // attended/attendanceRate are newer fields; derive them if the API
+  // is an older build that doesn't send them yet.
+  const attended    = myStats.attended ?? (myStats.present ?? 0) + (myStats.late ?? 0);
+  const allTimeRate = myStats.attendanceRate
+    ?? (myStats.totalSessions ? Math.round((attended / myStats.totalSessions) * 100) : 0);
 
   // isPending exposed so the warning-cleanup effect knows whether
   // to trust an empty atRisk array or wait for data to arrive
@@ -111,12 +116,13 @@ export default function StudentDashboard() {
   // Gated on `!ratesLoading` to avoid firing during the loading
   // window — that bug caused the warning to re-pop on every page
   // refresh because the cleanup ran before queries returned data.
+  // Only storage is touched here; the in-memory copy can stay, since
+  // a future at-risk state has a different fingerprint and shows anyway.
   useEffect(() => {
-    if (!ratesLoading && atRisk.length === 0 && dismissedFingerprint) {
-      try { localStorage.removeItem('attendx:dismissed-warning'); } catch {}
-      setDismissedFingerprint(null);
+    if (!ratesLoading && atRisk.length === 0) {
+      try { localStorage.removeItem('attendx:dismissed-warning'); } catch { /* storage blocked */ }
     }
-  }, [ratesLoading, atRisk.length, dismissedFingerprint]);
+  }, [ratesLoading, atRisk.length]);
 
   // ── Charts data ──────────────────────────────────────────────
   const pieData = [
@@ -132,9 +138,9 @@ export default function StudentDashboard() {
   const hasTrend  = trendData.length >= 2;
 
   const STAT_CARDS = [
-    { label: 'This month',        value: `${myStats?.thisMonth ?? 0}%`,  tone: 'green',  featured: true, hint: 'Your attendance across every class this month' },
-    { label: 'Sessions attended', value: myStats?.totalSessions ?? 0,    tone: 'brand',  hint: 'Present or late, all time' },
-    { label: 'On time',           value: `${myStats?.onTimeRate ?? 0}%`, tone: 'amber',  hint: 'Scanned before the late window' },
+    { label: 'This month',        value: `${myStats?.thisMonth ?? 0}%`,  tone: 'green',  featured: true, hint: `Across every class this month · ${allTimeRate}% all time` },
+    { label: 'Sessions attended', value: attended,                        tone: 'brand',  hint: `Present or late, of ${myStats?.totalSessions ?? 0} held` },
+    { label: 'On time',           value: `${myStats?.onTimeRate ?? 0}%`, tone: 'amber',  hint: 'Of the sessions you attended' },
     { label: 'Classes',           value: classes.length,                 tone: 'violet', hint: 'Enrolled this semester' },
   ];
 
@@ -514,10 +520,13 @@ export default function StudentDashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="date"
+                       tickFormatter={d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                 <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                        domain={[0, 100]} tickFormatter={v => `${v}%`} />
                 <Tooltip
+                  formatter={v => [`${v}%`, 'Attendance']}
+                  labelFormatter={d => `Week of ${new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
                   cursor={{ stroke: 'var(--green)', strokeWidth: 1, strokeDasharray: '3 3' }}
                   contentStyle={{
                     background:    'var(--bg-card)',

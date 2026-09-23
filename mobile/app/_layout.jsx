@@ -5,15 +5,15 @@ import { useEffect }                          from 'react';
 import { View }                               from 'react-native';
 import { GestureHandlerRootView }             from 'react-native-gesture-handler';
 // Per-weight subpath imports: the package roots require every weight
-// (60+ font files), which would all ship inside the app.
-import { BricolageGrotesque_600SemiBold } from '@expo-google-fonts/bricolage-grotesque/600SemiBold';
-import { BricolageGrotesque_700Bold }     from '@expo-google-fonts/bricolage-grotesque/700Bold';
-import { Figtree_400Regular }             from '@expo-google-fonts/figtree/400Regular';
-import { Figtree_500Medium }              from '@expo-google-fonts/figtree/500Medium';
-import { Figtree_600SemiBold }            from '@expo-google-fonts/figtree/600SemiBold';
-import { Figtree_700Bold }                from '@expo-google-fonts/figtree/700Bold';
-import { IBMPlexMono_400Regular }         from '@expo-google-fonts/ibm-plex-mono/400Regular';
-import { IBMPlexMono_600SemiBold }        from '@expo-google-fonts/ibm-plex-mono/600SemiBold';
+// (18+ font files each), which would all ship inside the app.
+import { Montserrat_600SemiBold }         from '@expo-google-fonts/montserrat/600SemiBold';
+import { Montserrat_700Bold }             from '@expo-google-fonts/montserrat/700Bold';
+import { Inter_400Regular }               from '@expo-google-fonts/inter/400Regular';
+import { Inter_500Medium }                from '@expo-google-fonts/inter/500Medium';
+import { Inter_600SemiBold }              from '@expo-google-fonts/inter/600SemiBold';
+import { Inter_700Bold }                  from '@expo-google-fonts/inter/700Bold';
+import { JetBrainsMono_400Regular }       from '@expo-google-fonts/jetbrains-mono/400Regular';
+import { JetBrainsMono_600SemiBold }      from '@expo-google-fonts/jetbrains-mono/600SemiBold';
 
 import {
   ThemeProvider, useTheme, useThemeMode,
@@ -50,17 +50,17 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 export default function RootLayout() {
-  // Roll Call type: Bricolage Grotesque (display), Figtree (body),
-  // IBM Plex Mono (labels). Keys match fontFamily in theme/tokens.js.
+  // Montserrat (headlines, matches the logo), Inter (body),
+  // JetBrains Mono (labels). Keys match fontFamily in theme/tokens.js.
   const [fontsLoaded, fontError] = useFonts({
-    'Bricolage-SemiBold':  BricolageGrotesque_600SemiBold,
-    'Bricolage-Bold':      BricolageGrotesque_700Bold,
-    'Figtree':             Figtree_400Regular,
-    'Figtree-Medium':      Figtree_500Medium,
-    'Figtree-SemiBold':    Figtree_600SemiBold,
-    'Figtree-Bold':        Figtree_700Bold,
-    'PlexMono':            IBMPlexMono_400Regular,
-    'PlexMono-SemiBold':   IBMPlexMono_600SemiBold,
+    'Montserrat-SemiBold':  Montserrat_600SemiBold,
+    'Montserrat-Bold':      Montserrat_700Bold,
+    'Inter':                Inter_400Regular,
+    'Inter-Medium':         Inter_500Medium,
+    'Inter-SemiBold':       Inter_600SemiBold,
+    'Inter-Bold':           Inter_700Bold,
+    'JetBrainsMono':        JetBrainsMono_400Regular,
+    'JetBrainsMono-SemiBold': JetBrainsMono_600SemiBold,
   });
 
   // Hide the splash once fonts are ready (or failed) — don't hang forever

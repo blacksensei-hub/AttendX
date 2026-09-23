@@ -121,7 +121,9 @@ export default function AdminUsersPage() {
     setBusyId(user.id);
     try {
       const result = await startImpersonation(user.id, reason);
-      startImpersonatingStore({ token: result.token, user: result.user, originalUser: currentUser });
+      // Store signature is (targetUser, targetToken); the admin's own
+      // user and token are captured inside the store as originalUser.
+      startImpersonatingStore(result.user, result.token);
       toast.success(`Now viewing as ${user.name}`);
       setConfirmImpersonate(null);
       if (user.role === 'lecturer') navigate('/lecturer');

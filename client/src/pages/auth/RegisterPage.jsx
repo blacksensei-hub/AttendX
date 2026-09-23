@@ -1,6 +1,6 @@
 import { useState }                          from 'react';
 import { Link, useNavigate }                 from 'react-router-dom';
-import { useForm }                           from 'react-hook-form';
+import { useForm, useWatch }                 from 'react-hook-form';
 import { zodResolver }                       from '@hookform/resolvers/zod';
 import { z }                                 from 'zod';
 import { motion, AnimatePresence }           from 'framer-motion';
@@ -52,15 +52,15 @@ export default function RegisterPage() {
   const [showPw, setShowPw] = useState(false);
 
   const {
-    register, handleSubmit, watch,
+    register, handleSubmit, control,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver:      zodResolver(schema),
     defaultValues: { role: 'student' },
   });
 
-  const role     = watch('role');
-  const password = watch('password') || '';
+  const role     = useWatch({ control, name: 'role' });
+  const password = useWatch({ control, name: 'password' }) || '';
 
   // Password strength checks — live visual feedback
   const checks = [

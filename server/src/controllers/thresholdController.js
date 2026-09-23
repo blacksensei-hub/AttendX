@@ -46,8 +46,13 @@ exports.getAtRiskStudents = async (req, res) => {
       INNER JOIN enrollments e ON e.class_id   = c.id
       INNER JOIN users       u ON u.id          = e.student_id
       LEFT  JOIN sessions    s ON s.class_id   = c.id
+                              AND s.status     = 'closed'
+                              AND s.open_at   >= COALESCE(e.enrolled_at, s.open_at)
       LEFT  JOIN attendance  a ON a.session_id  = s.id
                                AND a.student_id = u.id
+      -- Only CLOSED sessions held after the student enrolled count. The
+      -- join (not a FILTER) also keeps scans in a still-open session out
+      -- of "attended", which used to push rates past 100 percent.
 
       WHERE c.lecturer_id = :lecturerId
 
@@ -134,8 +139,13 @@ exports.getMyAttendanceRates = async (req, res) => {
       FROM enrollments e
       INNER JOIN classes    c ON c.id          = e.class_id
       LEFT  JOIN sessions   s ON s.class_id    = c.id
+                             AND s.status      = 'closed'
+                             AND s.open_at    >= COALESCE(e.enrolled_at, s.open_at)
       LEFT  JOIN attendance a ON a.session_id  = s.id
                               AND a.student_id = e.student_id
+      -- Only CLOSED sessions held after the student enrolled count. The
+      -- join (not a FILTER) also keeps scans in a still-open session out
+      -- of "attended", which used to push rates past 100 percent.
 
       WHERE e.student_id = :studentId
 
@@ -216,8 +226,13 @@ exports.sendThresholdWarnings = async (req, res) => {
       FROM enrollments e
       INNER JOIN users       u ON u.id         = e.student_id
       LEFT  JOIN sessions    s ON s.class_id   = e.class_id
+                              AND s.status     = 'closed'
+                              AND s.open_at   >= COALESCE(e.enrolled_at, s.open_at)
       LEFT  JOIN attendance  a ON a.session_id = s.id
                               AND a.student_id = u.id
+      -- Only CLOSED sessions held after the student enrolled count. The
+      -- join (not a FILTER) also keeps scans in a still-open session out
+      -- of "attended", which used to push rates past 100 percent.
 
       WHERE e.class_id = :classId
 

@@ -83,20 +83,22 @@ function LocationSelector({ onSelect }) {
 // ─── Inner: smoothly pans/zooms map when position changes ──────
 function MapController({ position, accuracy }) {
   const map = useMap();
+  const lat = position?.lat;
+  const lng = position?.lng;
 
   useEffect(() => {
-    if (!position) return;
+    if (lat == null || lng == null) return;
     // Pick a zoom level appropriate for the accuracy (tighter pin = more zoom)
     const zoom = accuracy && accuracy > 200
       ? 15
       : accuracy && accuracy > 50
         ? 17
         : 18;
-    map.flyTo([position.lat, position.lng], zoom, {
+    map.flyTo([lat, lng], zoom, {
       duration: 0.8,
       easeLinearity: 0.25,
     });
-  }, [position?.lat, position?.lng, accuracy, map]);
+  }, [lat, lng, accuracy, map]);
 
   return null;
 }
@@ -147,10 +149,14 @@ export default function GeofencePicker({ value, onChange }) {
     });
   }, [position, radius]);
 
-  // ── Cleanup watchers on unmount ─────────────────────────────
-  useEffect(() => {
-    return () => stopWatching();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // ── Cleanup watchers and pending searches on unmount ────────
+  useEffect(() => () => {
+    if (watchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+    clearTimeout(watchTimeoutRef.current);
+    clearTimeout(searchTimeoutRef.current);
+    searchAbortRef.current?.abort();
   }, []);
 
   const stopWatching = () => {

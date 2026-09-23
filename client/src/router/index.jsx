@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense }                 from 'react';
+import { useSyncExternalStore, lazy, Suspense }                from 'react';
 import {
   createBrowserRouter, RouterProvider, Navigate,
 }                                         from 'react-router-dom';
@@ -13,10 +13,6 @@ import AdminLayout  from '../components/layout/AdminLayout';
 import ProtectedRoute from './ProtectedRoute';
 import ErrorBoundary  from '../components/ErrorBoundary';
 import ForceLogoutListener from '../components/ForceLogoutListener';
-import AdminUsers   from '../pages/admin/Users';      
-import AdminAtRisk  from '../pages/admin/AtRisk';
-import AdminHeatmap from '../pages/admin/Heatmap';
-import AdminAuditLog from '../pages/admin/AuditLog';
 
 // ─── Lazily-loaded pages ──────────────────────────────────────
 //
@@ -51,6 +47,10 @@ const ScanPage               = lazy(ROUTE_IMPORTS['/student/scan']);
 const AdminDashboard         = lazy(ROUTE_IMPORTS['/admin']);
 const AdminClasses           = lazy(ROUTE_IMPORTS['/admin/classes']);
 const AdminSessions          = lazy(ROUTE_IMPORTS['/admin/sessions']);
+const AdminUsers             = lazy(ROUTE_IMPORTS['/admin/users']);
+const AdminAtRisk            = lazy(ROUTE_IMPORTS['/admin/at-risk']);
+const AdminHeatmap           = lazy(ROUTE_IMPORTS['/admin/heatmap']);
+const AdminAuditLog          = lazy(ROUTE_IMPORTS['/admin/audit']);
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -73,10 +73,12 @@ function RootRedirect() {
   const { isAuthenticated, user } = useAuthStore();
 
   // Wait for Zustand to rehydrate from localStorage before redirecting.
-  // Without this, the store is briefly empty on first render and falls
-  // through to the /student default even for admin/lecturer accounts.
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => { setHydrated(true); }, []);
+  // Without this, an empty store would fall through to the /student
+  // default even for admin/lecturer accounts.
+  const hydrated = useSyncExternalStore(
+    (onChange) => useAuthStore.persist?.onFinishHydration?.(onChange) ?? (() => {}),
+    () => useAuthStore.persist?.hasHydrated?.() ?? true,
+  );
   if (!hydrated) return null;
 
   // Signed-out visitors get the public landing page; everyone else

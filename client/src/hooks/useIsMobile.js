@@ -1,25 +1,23 @@
-// client/src/hooks/useIsMobile.js
-//
-// Returns true when the viewport is narrower than `breakpoint` px.
-// Uses matchMedia so it reacts to resize events without polling.
-// Default breakpoint matches Tailwind's `md` (768 px).
+import { useCallback, useSyncExternalStore } from 'react';
 
-import { useEffect, useState } from 'react';
-
+/**
+ * True while the viewport is narrower than `breakpoint` px.
+ *
+ * Reads the media query through useSyncExternalStore, so there is no
+ * state to keep in sync and no extra render on mount.
+ */
 export function useIsMobile(breakpoint = 768) {
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== 'undefined'
-      ? window.matchMedia(`(max-width: ${breakpoint - 1}px)`).matches
-      : false
+  const query = `(max-width: ${breakpoint - 1}px)`;
+
+  const subscribe = useCallback((onChange) => {
+    const mql = window.matchMedia(query);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(query).matches,
+    () => false,
   );
-
-  useEffect(() => {
-    const mql     = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
-    const handler = (e) => setIsMobile(e.matches);
-    mql.addEventListener('change', handler);
-    setIsMobile(mql.matches);
-    return () => mql.removeEventListener('change', handler);
-  }, [breakpoint]);
-
-  return isMobile;
 }

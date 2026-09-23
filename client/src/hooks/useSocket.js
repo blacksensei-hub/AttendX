@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
 
@@ -10,20 +10,27 @@ export function useSocket(sessionId) {
   useEffect(() => {
     if (!sessionId || !token) return;
 
+    // No transports restriction: forcing websocket-only put the mobile
+    // app into an endless reconnect loop against Render; letting
+    // socket.io start on polling and upgrade is reliable there.
     const socket = io(
       import.meta.env.VITE_WS_URL || 'http://localhost:5000',
       {
         auth:              { token },
-        transports:        ['websocket'],
         reconnectionDelay: 2000,
       }
     );
 
     socketRef.current = socket;
 
-    socket.on('connect',    () => setConnected(true));
+    // Rooms live on the server per connection, so they are lost on
+    // every reconnect. Join on each 'connect', not once, or the live
+    // page silently stops receiving scans after a network blip.
+    socket.on('connect', () => {
+      setConnected(true);
+      socket.emit('join-session', sessionId);
+    });
     socket.on('disconnect', () => setConnected(false));
-    socket.emit('join-session', sessionId);
 
     return () => {
       socket.emit('leave-session', sessionId);
@@ -32,15 +39,10 @@ export function useSocket(sessionId) {
     };
   }, [sessionId, token]);
 
-  const on  = useRef((event, cb) => socketRef.current?.on(event, cb));
-  const off = useRef((event)     => socketRef.current?.off(event));
-  const emit = useRef((event, data) => socketRef.current?.emit(event, data));
+  // Stable functions that read the live socket at call time
+  const on   = useCallback((event, cb)   => socketRef.current?.on(event, cb), []);
+  const off  = useCallback((event)       => socketRef.current?.off(event), []);
+  const emit = useCallback((event, data) => socketRef.current?.emit(event, data), []);
 
-  return {
-    connected,
-    on:   on.current,
-    off:  off.current,
-    emit: emit.current,
-    socket: socketRef.current,
-  };
+  return { connected, on, off, emit };
 }

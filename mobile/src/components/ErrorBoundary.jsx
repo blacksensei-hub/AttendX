@@ -149,7 +149,7 @@ export default class ErrorBoundary extends Component {
               <Text style={{
                 color:    'rgba(255, 255, 255, 0.8)',
                 fontSize: 12,
-                fontFamily: 'JetBrainsMono',
+                fontFamily: 'PlexMono',
               }}>
                 {this.state.error.message}
               </Text>

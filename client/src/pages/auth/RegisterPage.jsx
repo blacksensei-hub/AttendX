@@ -94,23 +94,24 @@ export default function RegisterPage() {
         transition={{ delay: 0.1, ...SPRING.gentle }}
         style={{ marginBottom: 'var(--space-4)' }}
       >
+        <p className="kicker"><span className="dot" /> New account</p>
         <h1 style={{
           fontFamily:    'var(--font-display)',
-          fontSize:      'var(--text-2xl)',
-          fontWeight:    700,
+          fontSize:      'clamp(40px, 5vw, 56px)',
+          fontWeight:    650,
           color:         'var(--text-primary)',
-          letterSpacing: '-0.02em',
-          lineHeight:    1.1,
-          marginBottom:  '6px',
+          letterSpacing: '-0.036em',
+          lineHeight:    1,
+          margin:        '16px 0 12px',
         }}>
-          Create your account
+          Take your seat.
         </h1>
         <p style={{
-          color:      'var(--text-muted)',
-          fontSize:   'var(--text-sm)',
-          lineHeight: 1.5,
+          color:      'var(--text-subtle)',
+          fontSize:   'var(--text-base)',
+          lineHeight: 1.55,
         }}>
-          Join <span className="gradient-text" style={{ fontWeight: 600 }}>AttendX</span> to manage or track class attendance.
+          One account for scanning in, checking your attendance, and running your classes.
         </p>
       </motion.div>
 
@@ -131,11 +132,7 @@ export default function RegisterPage() {
           flexDirection: 'column',
           gap:           '6px',
         }}>
-          <label style={{
-            color:      'var(--text-secondary)',
-            fontSize:   'var(--text-xs)',
-            fontWeight: 600,
-          }}>
+          <label className="label" style={{ marginBottom: 0 }}>
             I am a
           </label>
           <div style={{
@@ -457,9 +454,9 @@ export default function RegisterPage() {
           transition={SPRING.snappy}
           type="submit"
           disabled={isSubmitting}
-          className="btn-primary"
+          className="btn-accent"
           style={{
-            height:    '48px',
+            height:    '52px',
             marginTop: '8px',
             fontSize:  'var(--text-sm)',
             opacity:   isSubmitting ? 0.7 : 1,
@@ -534,11 +531,7 @@ function Field({ label, icon: Icon, action, optional, hint, error, children }) {
           alignItems: 'center',
           gap:        '6px',
         }}>
-          <label style={{
-            color:      'var(--text-secondary)',
-            fontSize:   'var(--text-xs)',
-            fontWeight: 600,
-          }}>
+          <label className="label" style={{ marginBottom: 0 }}>
             {label}
           </label>
           {optional && (

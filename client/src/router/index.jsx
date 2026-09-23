@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy }                           from 'react';
+import { useState, useEffect, lazy, Suspense }                 from 'react';
 import {
   createBrowserRouter, RouterProvider, Navigate,
 }                                         from 'react-router-dom';
@@ -29,6 +29,7 @@ import AdminAuditLog from '../pages/admin/AuditLog';
 // imports inline because they aren't in ROUTE_IMPORTS — they're
 // reached via a click on a class card or a Reports table row,
 // not via the sidebar.
+const LandingPage            = lazy(() => import('../pages/landing/LandingPage'));
 const LoginPage              = lazy(ROUTE_IMPORTS['/login']);
 const RegisterPage           = lazy(ROUTE_IMPORTS['/register']);
 
@@ -78,7 +79,15 @@ function RootRedirect() {
   useEffect(() => { setHydrated(true); }, []);
   if (!hydrated) return null;
 
-  if (!isAuthenticated)          return <Navigate to="/login"    replace />;
+  // Signed-out visitors get the public landing page; everyone else
+  // goes straight to their own dashboard.
+  if (!isAuthenticated) {
+    return (
+      <Suspense fallback={<div style={{ minHeight: '100dvh', background: '#070D1F' }} />}>
+        <LandingPage />
+      </Suspense>
+    );
+  }
   if (user?.role === 'admin')    return <Navigate to="/admin"    replace />;
   if (user?.role === 'lecturer') return <Navigate to="/lecturer" replace />;
   return                               <Navigate to="/student"   replace />;

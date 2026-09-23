@@ -3,6 +3,7 @@ import { AnimatePresence }       from 'framer-motion';
 import AppRouter                 from './router';
 import SplashScreen              from './components/SplashScreen';
 import { useUIStore }            from './store/uiStore';
+import { useAuthStore }          from './store/authStore';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -32,7 +33,12 @@ export default function App() {
 
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    // The landing page has its own opening (the hero headline
+    // assembles on load), so a splash in front of it would only
+    // delay the video. Skip it there.
+    const onLanding = window.location.pathname === '/' && !useAuthStore.getState().isAuthenticated;
+    return !onLanding;
   });
 
   // Apply theme class to <html>. Removing both first prevents a

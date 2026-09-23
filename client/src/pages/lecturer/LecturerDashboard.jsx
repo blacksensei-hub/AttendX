@@ -2,8 +2,7 @@ import { useMemo, memo }                from 'react';
 import { useQuery }                    from '@tanstack/react-query';
 import { motion }                      from 'framer-motion';
 import {
-  BookOpen, Users, BarChart3, TrendingUp,
-  ArrowUpRight, LineChart as LineChartIcon,
+  TrendingUp, ArrowUpRight, LineChart as LineChartIcon,
 }                                      from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -16,7 +15,8 @@ import { classService }                from '../../services/classService';
 import { useAuthStore }                from '../../store/authStore';
 import api                             from '../../services/api';
 
-import PageShell                       from '../../components/layout/PageShell';
+import PageShell, { PageHeader }       from '../../components/layout/PageShell';
+import StatTile, { SectionTitle }      from '../../components/ui/StatTile';
 import StatusPill                      from '../../components/ui/StatusPill';
 import {
   AnimatedList, AnimatedItem,
@@ -72,39 +72,14 @@ export default function LecturerDashboard() {
   // Stat cards — memoized so AnimatedItem children don't get
   // fresh object refs on every parent render.
   const CARDS = useMemo(() => [
-    {
-      label:  'Total Classes',
-      value:  classes.length,
-      icon:   BookOpen,
-      color:  'var(--brand)',
-      bg:     'var(--brand-subtle)',
-      border: 'var(--brand-border)',
-    },
-    {
-      label:  'Total Students',
-      value:  totalStudents,
-      icon:   Users,
-      color:  'var(--violet)',
-      bg:     'var(--violet-bg)',
-      border: 'var(--violet-border)',
-    },
-    {
-      label:  'Active Sessions',
-      value:  activeSessions,
-      icon:   BarChart3,
-      color:  'var(--green)',
-      bg:     'var(--green-bg)',
-      border: 'var(--green-border)',
-    },
-    {
-      label:  'Avg Attendance',
-      value:  `${avgAttendance}%`,
-      icon:   TrendingUp,
-      color:  'var(--amber)',
-      bg:     'var(--amber-bg)',
-      border: 'var(--amber-border)',
-    },
+    { label: 'Avg attendance',  value: `${avgAttendance}%`, tone: 'green',  featured: true, framed: activeSessions === 0, hint: 'Across all your classes, last 14 days' },
+    { label: 'Live now',        value: activeSessions,       tone: 'brand',  hint: activeSessions ? 'Sessions taking attendance' : 'No sessions open' },
+    { label: 'Students',        value: totalStudents,        tone: 'violet', hint: 'Enrolled across your classes' },
+    { label: 'Classes',         value: classes.length,       tone: 'amber',  hint: 'You teach this semester' },
   ], [classes.length, totalStudents, activeSessions, avgAttendance]);
+
+  const liveClasses = useMemo(() => classes.filter(c => c.activeSession), [classes]);
+  const today       = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // Real data only — no synthetic fallback. A single point can't form
   // a trend line, so we need at least two before the chart says
@@ -123,48 +98,74 @@ export default function LecturerDashboard() {
     <PageShell gap="var(--space-4)">
 
       {/* ── Welcome header ──────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING.gentle}
-      >
-        <h1 style={{
-          fontFamily:    'var(--font-display)',
-          fontSize:      'var(--text-2xl)',
-          fontWeight:    700,
-          color:         'var(--text-primary)',
-          letterSpacing: '-0.02em',
-          lineHeight:    1.15,
-        }}>
-          Good {getGreeting()},{' '}
-          <span className="gradient-text">
-            {user?.name?.split(' ')[0]}
-          </span>
-        </h1>
-        <p style={{
-          color:     'var(--text-muted)',
-          fontSize:  'var(--text-md)',
-          marginTop: '6px',
-        }}>
-          Here's what's happening in your classes today.
-        </p>
-      </motion.div>
+      <PageHeader
+        kicker={`Lecturer / ${today}`}
+        title={`Good ${getGreeting()},`}
+        accent={`${user?.name?.split(' ')[0] ?? ''}.`}
+        subtitle={liveClasses.length
+          ? `${liveClasses.length} session${liveClasses.length !== 1 ? 's are' : ' is'} taking attendance right now.`
+          : "Here's how your classes are doing."}
+        action={
+          <motion.button
+            whileTap={TAP.button}
+            onClick={() => navigate('/lecturer/classes')}
+            className="btn-primary"
+          >
+            Open a session <ArrowUpRight size={15} />
+          </motion.button>
+        }
+      />
+
+      {/* ── Live sessions: jump straight back in ──────────────── */}
+      {liveClasses.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING.snappy}
+          className="scanframe is-teal is-live"
+          style={{ '--radius-molecular': '20px' }}
+        >
+          <div style={{
+            padding:      'var(--space-4)',
+            background:   'var(--bg-inverse)',
+            color:        'var(--text-inverse)',
+            borderRadius: 20,
+            boxShadow:    'var(--shadow-lg)',
+            display:      'flex',
+            flexDirection:'column',
+            gap:          12,
+          }}>
+            <p className="kicker" style={{ color: 'color-mix(in srgb, var(--text-inverse) 65%, transparent)' }}>
+              <span className="live-dot" /> Live now
+            </p>
+            {liveClasses.map(cls => (
+              <div key={cls.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 650, fontSize: 'var(--text-lg)', letterSpacing: '-0.02em' }}>{cls.name}</p>
+                  <p style={{ fontSize: 'var(--text-sm)', opacity: 0.7, marginTop: 2 }}>{cls.enrollmentCount ?? 0} enrolled</p>
+                </div>
+                <motion.button
+                  whileTap={TAP.button}
+                  onClick={() => navigate(`/lecturer/session/${cls.activeSession.id}`)}
+                  className="btn-accent"
+                >
+                  Open live view <ArrowUpRight size={15} />
+                </motion.button>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Metric cards ────────────────────────────────────── */}
-      <AnimatedList
-        style={{
-          display:             'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap:                 'var(--space-3)',
-        }}
-      >
-        {CARDS.map(card => (
+      <AnimatedList className="grid-4">
+        {CARDS.map((card, i) => (
           <AnimatedItem
             key={card.label}
             whileHover={{ y: -3 }}
             transition={SPRING.snappy}
           >
-            <StatCard {...card} />
+            <StatTile {...card} index={i + 1} />
           </AnimatedItem>
         ))}
       </AnimatedList>
@@ -189,23 +190,7 @@ export default function LecturerDashboard() {
           flexWrap:       'wrap',
           gap:            'var(--space-2)',
         }}>
-          <div>
-            <h3 style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 600,
-              fontSize:   'var(--text-md)',
-              color:      'var(--text-primary)',
-            }}>
-              Attendance Trend
-            </h3>
-            <p style={{
-              color:     'var(--text-muted)',
-              fontSize:  'var(--text-xs)',
-              marginTop: '2px',
-            }}>
-              Last 14 days across all classes
-            </p>
-          </div>
+          <SectionTitle kicker="Last 14 days / all classes" title="Attendance trend" />
           {/* Only claim an average once there's real data behind it */}
           {hasTrend && (
             <StatusPill
@@ -297,14 +282,7 @@ export default function LecturerDashboard() {
             justifyContent: 'space-between',
             marginBottom:   'var(--space-3)',
           }}>
-            <h3 style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 600,
-              fontSize:   'var(--text-md)',
-              color:      'var(--text-primary)',
-            }}>
-              Recent classes
-            </h3>
+            <SectionTitle kicker="Your classes" title="Recent classes" />
             <motion.button
               whileTap={TAP.button}
               whileHover={{ x: 2 }}
@@ -403,69 +381,6 @@ function ChartEmptyState({ icon: Icon, title, subtitle }) {
     </div>
   );
 }
-
-// ─── Stat card — memoized leaf component ───────────────────────
-// Splitting this out and memoizing means hover state on one card
-// doesn't trigger re-renders on the other three.
-const StatCard = memo(function StatCard({ label, value, icon: Icon, color, bg, border }) {
-  return (
-    <div style={{
-      position:     'relative',
-      background:   'var(--bg-card)',
-      borderRadius: 'var(--radius-molecular)',
-      padding:      'var(--space-3)',
-      boxShadow:    'var(--shadow-md)',
-      overflow:     'hidden',
-      height:       '100%',
-    }}>
-      <div style={{
-        position:   'absolute',
-        top:        '-40px',
-        right:      '-40px',
-        width:      '120px',
-        height:     '120px',
-        background: bg,
-        filter:     'blur(40px)',
-        opacity:    0.7,
-        pointerEvents: 'none',
-      }} />
-
-      <div style={{
-        position:       'relative',
-        width:          '40px',
-        height:         '40px',
-        borderRadius:   'var(--radius-atomic)',
-        background:     bg,
-        border:         `1px solid ${border}`,
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'center',
-        marginBottom:   'var(--space-2)',
-      }}>
-        <Icon size={18} style={{ color }} />
-      </div>
-
-      <p style={{
-        position:   'relative',
-        fontFamily: 'var(--font-display)',
-        fontSize:   'var(--text-2xl)',
-        fontWeight: 700,
-        color,
-        lineHeight: 1.1,
-      }}>
-        {value}
-      </p>
-      <p style={{
-        position:  'relative',
-        color:     'var(--text-muted)',
-        fontSize:  'var(--text-sm)',
-        marginTop: '4px',
-      }}>
-        {label}
-      </p>
-    </div>
-  );
-});
 
 // ─── Recent class row — memoized ──────────────────────────────
 // Custom comparator: re-render only when the cls reference changes.

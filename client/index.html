@@ -1,20 +1,39 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="light">
   <head>
     <meta charset="UTF-8" />
-    <!-- PNG rather than the old favicon.svg. Browsers scale this down for
-         the tab icon; if it ever looks soft at 16px, a purpose-made 32px
-         PNG (or an SVG version of the mark) would sharpen it up. -->
-    <link rel="icon" type="image/png" href="/logo-full.png" />
-    <link rel="apple-touch-icon" href="/logo-full.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0a14" />
-    <meta name="description" content="AttendX — QR-based class attendance management for GCTU." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/logo-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#EEF1F5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#070D1F" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="AttendX: QR attendance for GCTU. Lecturers open a session, students scan, and the register fills itself." />
+    <meta property="og:title" content="AttendX, class attendance for GCTU" />
+    <meta property="og:description" content="Open a session. Students scan. The register fills itself." />
+    <meta property="og:type" content="website" />
+    <!-- DEPLOY STEP: og:url and og:image need the live absolute URL -->
+    <meta property="og:url" content="https://atttend-x.vercel.app/" />
+    <meta property="og:image" content="https://atttend-x.vercel.app/landing/og.jpg" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
     />
-    <title>AttendX — Class Attendance</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Apply the saved theme before first paint so there's no flash
+         of the wrong palette. Mirrors uiStore's persisted value. -->
+    <script>
+      try {
+        var s = JSON.parse(localStorage.getItem('attendx-ui') || '{}');
+        var t = (s.state && s.state.theme) || 'light';
+        if (s.version !== 2) t = 'light';
+        document.documentElement.className = t;
+      } catch (e) {}
+    </script>
+    <title>AttendX · Class attendance for GCTU</title>
   </head>
   <body>
     <div id="root"></div>

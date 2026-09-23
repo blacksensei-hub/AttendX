@@ -3,25 +3,29 @@ import { motion } from 'framer-motion';
 
 /**
  * ═════════════════════════════════════════════════════════════════
- * SplashScreen — branded first-load moment.
+ * SplashScreen — the first-load moment, Roll Call edition.
  *
- * Deliberately short. A splash on the web is pure branding: unlike
- * mobile, there's no token check or native boot to wait on, so
- * anything longer than ~1.5s is just an obstacle between the user
- * and the page they asked for.
+ * The mark assembles itself: the four scan brackets close in from
+ * outside the frame, then the check draws. It is the whole product
+ * in one second (frame the code, get the tick), and it is short on
+ * purpose: on the web a splash is branding, not a loading gate.
  *
- * Fixed dark background rather than var(--bg): this renders before
- * (or alongside) the theme class landing on <html>, so reading the
- * token risks a flash of the wrong palette. Hardcoding the dark
- * value means the splash looks identical either way, and the
- * fade-out covers the handover to whatever theme the user has.
+ * Fixed ink background rather than var(--bg) so it looks the same
+ * whichever theme lands on <html> underneath it.
  * ═════════════════════════════════════════════════════════════════
  */
+const EASE_OUT = [0.16, 1, 0.3, 1];
+
+const CORNERS = [
+  { d: 'M14 25v-5a6 6 0 0 1 6-6h5', x: -10, y: -10 },
+  { d: 'M39 14h5a6 6 0 0 1 6 6v5',  x:  10, y: -10 },
+  { d: 'M50 39v5a6 6 0 0 1-6 6h-5', x:  10, y:  10 },
+  { d: 'M25 50h-5a6 6 0 0 1-6-6v-5', x: -10, y:  10 },
+];
+
 export default function SplashScreen() {
   return (
     <motion.div
-      // Only an exit animation — it's already on screen when it mounts,
-      // so fading in would just delay things further.
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.45, ease: [0.65, 0, 0.35, 1] }}
@@ -29,103 +33,84 @@ export default function SplashScreen() {
         position:       'fixed',
         inset:          0,
         zIndex:         9999,
-        background:     '#0a0a14',
+        background:     '#070D1F',
         display:        'flex',
         flexDirection:  'column',
         alignItems:     'center',
         justifyContent: 'center',
-        gap:            '24px',
-        padding:        '24px',
+        gap:            22,
+        padding:        24,
       }}
     >
-      {/* Ambient glow behind the mark */}
-      <div style={{
+      <div aria-hidden="true" style={{
         position:      'absolute',
-        width:         '420px',
-        height:        '420px',
-        maxWidth:      '90vw',
-        maxHeight:     '90vw',
-        background:    'rgba(59, 130, 246, 0.18)',
-        filter:        'blur(100px)',
+        width:         520,
+        height:        520,
+        maxWidth:      '100vw',
+        maxHeight:     '100vw',
         borderRadius:  '50%',
+        background:    'radial-gradient(closest-side, rgba(61,92,255,0.22), transparent)',
         pointerEvents: 'none',
       }} />
 
-      {/* Logo plate — the asset has a white background, so it sits on
-          a white card rather than as a bare rectangle on the dark. */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.92, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-        style={{
-          position:       'relative',
-          background:     '#ffffff',
-          borderRadius:   '20px',
-          padding:        '18px 26px',
-          boxShadow:      '0 20px 60px -12px rgba(0,0,0,0.6)',
-          display:        'flex',
-          alignItems:     'center',
-          justifyContent: 'center',
-        }}
-      >
-        <img
-          src="/logo-full.png"
-          alt="AttendX"
-          style={{
-            display:   'block',
-            height:    '84px',
-            width:     'auto',
-            maxWidth:  '100%',
-            objectFit: 'contain',
-          }}
+      <svg width="96" height="96" viewBox="0 0 64 64" role="img" aria-label="AttendX" style={{ position: 'relative', overflow: 'visible' }}>
+        <g fill="none" stroke="#6F8BFF" strokeWidth="4" strokeLinecap="round">
+          {CORNERS.map((c, i) => (
+            <motion.path
+              key={i}
+              d={c.d}
+              initial={{ x: c.x, y: c.y, opacity: 0 }}
+              animate={{ x: 0, y: 0, opacity: 1 }}
+              transition={{ duration: 0.6, ease: EASE_OUT, delay: 0.05 * i }}
+            />
+          ))}
+        </g>
+        <motion.path
+          d="M22.5 32.5l6.5 6.5 13-13.5"
+          fill="none"
+          stroke="#14C9A6"
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.45, ease: EASE_OUT, delay: 0.45 }}
         />
-      </motion.div>
+      </svg>
 
-      {/* Tagline */}
       <motion.p
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ delay: 0.3, duration: 0.6, ease: EASE_OUT }}
         style={{
           position:      'relative',
-          color:         'rgba(255,255,255,0.5)',
-          fontSize:      '13px',
-          fontFamily:    "'Inter', system-ui, sans-serif",
-          letterSpacing: '0.02em',
-          textAlign:     'center',
           margin:        0,
+          fontFamily:    "'Bricolage Grotesque', system-ui, sans-serif",
+          fontWeight:    750,
+          fontSize:      34,
+          letterSpacing: '-0.04em',
+          color:         '#EEF1F7',
         }}
       >
-        Smart attendance. Simple experience.
+        Attend<span style={{ color: '#8FA3FF' }}>X</span>
       </motion.p>
 
-      {/* Progress hairline — a quiet indicator that something is
-          happening, rather than a spinner competing with the logo. */}
-      <motion.div
+      <motion.p
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.35, duration: 0.4 }}
+        transition={{ delay: 0.55, duration: 0.5 }}
         style={{
-          position:     'relative',
-          width:        '140px',
-          height:       '2px',
-          borderRadius: '2px',
-          background:   'rgba(255,255,255,0.08)',
-          overflow:     'hidden',
+          position:      'relative',
+          margin:        0,
+          fontFamily:    "'IBM Plex Mono', ui-monospace, monospace",
+          fontSize:      11,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color:         'rgba(238,241,247,0.5)',
         }}
       >
-        <motion.div
-          initial={{ x: '-100%' }}
-          animate={{ x: '100%' }}
-          transition={{ duration: 1.1, ease: 'easeInOut', repeat: Infinity }}
-          style={{
-            width:        '60%',
-            height:       '100%',
-            borderRadius: '2px',
-            background:   'linear-gradient(90deg, transparent, #3b82f6, transparent)',
-          }}
-        />
-      </motion.div>
+        Every seat, counted
+      </motion.p>
     </motion.div>
   );
 }

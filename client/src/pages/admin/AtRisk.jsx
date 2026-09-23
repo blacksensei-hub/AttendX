@@ -111,7 +111,7 @@ export default function AdminAtRiskPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 'var(--space-4)' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: isMobile ? 'var(--text-xl)' : 'clamp(20px,2.5vw,28px)', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
             At-risk students
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>

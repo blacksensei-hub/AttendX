@@ -49,37 +49,56 @@ export default function PageShell({
   );
 }
 
-export function PageHeader({ title, subtitle, action, children }) {
+/**
+ * PageHeader — the Roll Call page opener.
+ *
+ *   kicker   mono slash label above the title ("Lecturer / Classes").
+ *            Defaults to today's date so every page carries one.
+ *   title    big tight display headline
+ *   accent   optional trailing word(s) set in cobalt ("Jeffrey.")
+ */
+export function PageHeader({ title, accent, kicker, subtitle, action, children }) {
+  const today = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
   return (
     <header style={{
       display:        'flex',
-      alignItems:     'flex-start',
+      alignItems:     'flex-end',
       justifyContent: 'space-between',
       flexWrap:       'wrap',
-      gap:            'var(--space-3)',
+      gap:            'var(--space-4)',
+      paddingBottom:  'var(--space-2)',
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
+        <p className="kicker"><span className="dot" />{kicker ?? today}</p>
         <h1 style={{
+          marginTop:     14,
           fontFamily:    'var(--font-display)',
-          fontSize:      'var(--text-xl)',
-          fontWeight:    700,
+          fontSize:      'clamp(34px, 4.4vw, 60px)',
+          fontWeight:    650,
+          lineHeight:    0.98,
           color:         'var(--text-primary)',
-          letterSpacing: '-0.01em',
+          letterSpacing: '-0.038em',
+          textWrap:      'balance',
         }}>
           {title}
+          {accent && <> <span className="accent-word">{accent}</span></>}
         </h1>
         {subtitle && (
           <p style={{
-            color:     'var(--text-muted)',
-            fontSize:  'var(--text-sm)',
-            marginTop: '0.25rem',
+            color:     'var(--text-subtle)',
+            fontSize:  'var(--text-md)',
+            lineHeight: 1.5,
+            marginTop: 12,
+            maxWidth:  '60ch',
           }}>
             {subtitle}
           </p>
         )}
         {children}
       </div>
-      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+      {action && <div style={{ flexShrink: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{action}</div>}
     </header>
   );
 }

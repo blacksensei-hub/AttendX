@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+/**
+ * UI store — theme preference.
+ *
+ * Light is the default for the Roll Call redesign. The persisted
+ * store is versioned: version 1 saved 'dark' as the old default for
+ * everyone, so the migration resets it once to light. Anyone who
+ * switches back to dark after that keeps their choice.
+ */
 export const useUIStore = create(
   persist(
     (set, get) => ({
-      theme: 'dark',
+      theme: 'light',
 
       toggleTheme: () => {
         const next = get().theme === 'dark' ? 'light' : 'dark';
@@ -20,7 +28,9 @@ export const useUIStore = create(
       },
     }),
     {
-      name: 'attendx-ui',
+      name:       'attendx-ui',
+      version:    2,
+      migrate:    () => ({ theme: 'light' }),
       partialize: (state) => ({ theme: state.theme }),
     }
   )

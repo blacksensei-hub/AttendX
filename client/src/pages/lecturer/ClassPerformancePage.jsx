@@ -91,7 +91,7 @@ export default function ClassPerformancePage() {
             <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--brand-subtle)', border: '1px solid var(--brand-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <GraduationCap size={16} color="var(--brand-text)" />
             </div>
-            <h1 style={{ margin: 0, fontSize: isMobile ? 'var(--text-lg)' : 'clamp(18px,2vw,26px)', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+            <h1 style={{ margin: 0, fontSize: 'clamp(30px, 3.6vw, 48px)', fontWeight: 650, letterSpacing: '-0.035em', lineHeight: 1, fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
               Student performance
             </h1>
           </div>

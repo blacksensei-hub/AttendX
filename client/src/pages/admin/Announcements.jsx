@@ -83,7 +83,7 @@ export default function AdminAnnouncementsPage() {
           <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--brand-subtle)', border: '1px solid var(--brand-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Megaphone size={18} color="var(--brand-text)" />
           </div>
-          <h1 style={{ margin: 0, fontSize: isMobile ? 'var(--text-xl)' : 'clamp(20px,2.5vw,28px)', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
             Announcements
           </h1>
         </div>

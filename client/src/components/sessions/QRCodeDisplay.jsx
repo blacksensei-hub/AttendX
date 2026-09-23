@@ -15,7 +15,7 @@ import {
  *
  * Composes:
  *   • QRPulseRing     — ambient 2-second warning before rotation
- *   • Countdown ring  — SVG progress stroke around the code
+ *   • Countdown bar   — hairline under the code that drains to the next rotation
  *   • Token preview   — monospace token box for web-only testing
  *
  * The rotation interval is configured per-session by the lecturer.
@@ -24,7 +24,7 @@ import {
  * prevent panic-scanning.
  * ═════════════════════════════════════════════════════════════════
  */
-export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
+export default function QRCodeDisplay({ sessionId, qrInterval = 5, size = 220 }) {
   const [qrToken,    setQrToken]    = useState(null);
   const [countdown,  setCountdown]  = useState(qrInterval);
   const [isLoading,  setIsLoading]  = useState(false);
@@ -144,50 +144,10 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
       alignItems:    'center',
     }}>
 
-      {/* ── QR + countdown ring ─────────────────────────────── */}
-      <div style={{
-        position: 'relative',
-        padding:  '16px',
-      }}>
-        {/*
-          Countdown ring — SVG stroke around the QR that depletes
-          as the token approaches rotation. The path is rotated -90°
-          so progress starts from the top (12 o'clock).
-        */}
-        <svg
-          style={{
-            position:  'absolute',
-            inset:     0,
-            width:     '100%',
-            height:    '100%',
-            transform: 'rotate(-90deg)',
-            pointerEvents: 'none',
-          }}
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-        >
-          <circle
-            cx="50" cy="50" r="48"
-            fill="none"
-            stroke="var(--brand-subtle)"
-            strokeWidth="1.2"
-          />
-          <circle
-            cx="50" cy="50" r="48"
-            fill="none"
-            stroke="var(--brand)"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeDasharray={`${(1 - progress / 100) * 301.59} 301.59`}
-            style={{ transition: 'stroke-dasharray 0.9s linear' }}
-          />
-        </svg>
-
-        {/*
-          QRPulseRing wraps the visible QR tile. It receives the
-          countdown value and triggers its 2-second warning pulse
-          when countdown === 2. No extra props required here.
-        */}
+      {/* ── QR inside the scan frame ────────────────────────────
+          The four brackets from the AttendX mark frame the code, and
+          a hairline under it drains toward the next rotation. */}
+      <div className="scanframe is-live" style={{ position: 'relative', padding: 14, '--radius-molecular': '22px' }}>
         <QRPulseRing secondsRemaining={countdown}>
           <AnimatePresence mode="wait">
             <motion.div
@@ -238,16 +198,16 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
               {qrToken ? (
                 <QRCodeSVG
                   value={qrToken}
-                  size={220}
+                  size={size}
                   bgColor="#ffffff"
-                  fgColor="#0f172a"
+                  fgColor="#0B1B3F"
                   level="M"
                   includeMargin={false}
                 />
               ) : (
                 <div style={{
-                  width:          '220px',
-                  height:         '220px',
+                  width:          size,
+                  height:         size,
                   display:        'flex',
                   alignItems:     'center',
                   justifyContent: 'center',
@@ -264,6 +224,26 @@ export default function QRCodeDisplay({ sessionId, qrInterval = 5 }) {
             </motion.div>
           </AnimatePresence>
         </QRPulseRing>
+
+        <div aria-hidden="true" style={{
+          position:     'absolute',
+          left:         14,
+          right:        14,
+          bottom:       0,
+          height:       3,
+          borderRadius: 3,
+          background:   'var(--border)',
+          overflow:     'hidden',
+        }}>
+          <div style={{
+            height:          '100%',
+            width:           '100%',
+            background:      countdown <= 2 ? 'var(--amber-fill)' : 'var(--brand)',
+            transformOrigin: 'left',
+            transform:       `scaleX(${Math.max(0, 1 - progress / 100)})`,
+            transition:      'transform 0.9s linear, background-color 0.3s',
+          }} />
+        </div>
       </div>
 
       {/* ── Countdown label ─────────────────────────────────── */}

@@ -10,7 +10,8 @@ import {
 
 import { adminService }                              from '../../services/adminService';
 import { useAuthStore }                              from '../../store/authStore';
-import PageShell                                     from '../../components/layout/PageShell';
+import PageShell, { PageHeader }                     from '../../components/layout/PageShell';
+import StatTile, { SectionTitle }                    from '../../components/ui/StatTile';
 import { AnimatedList, AnimatedItem }                from '../../components/ui/AnimatedList';
 import {
   SPRING, TAP, EASE, DURATION,
@@ -44,72 +45,16 @@ export default function AdminDashboard() {
 
   const stats = statsData ?? {};
 
+  const n = v => (isLoading ? '...' : Number(v ?? 0).toLocaleString('en-GB'));
   const STAT_CARDS = [
-    {
-      label: 'Total users',
-      value: stats.totalUsers ?? 0,
-      icon:  Users,
-      color: 'var(--violet)',
-      bg:    'var(--violet-bg)',
-      border:'var(--violet-border)',
-    },
-    {
-      label: 'Lecturers',
-      value: stats.totalLecturers ?? 0,
-      icon:  UserCog,
-      color: 'var(--brand)',
-      bg:    'var(--brand-subtle)',
-      border:'var(--brand-border)',
-    },
-    {
-      label: 'Students',
-      value: stats.totalStudents ?? 0,
-      icon:  GraduationCap,
-      color: 'var(--violet)',
-      bg:    'var(--violet-bg)',
-      border:'var(--violet-border)',
-    },
-    {
-      label: 'Classes',
-      value: stats.totalClasses ?? 0,
-      icon:  BookOpen,
-      color: 'var(--green)',
-      bg:    'var(--green-bg)',
-      border:'var(--green-border)',
-    },
-    {
-      label: 'Total sessions',
-      value: stats.totalSessions ?? 0,
-      icon:  BarChart3,
-      color: 'var(--amber)',
-      bg:    'var(--amber-bg)',
-      border:'var(--amber-border)',
-    },
-    {
-      label: 'Active now',
-      value: stats.activeSessions ?? 0,
-      icon:  Radio,
-      color: 'var(--red)',
-      bg:    'var(--red-bg)',
-      border:'var(--red-border)',
-      pulse: true,
-    },
-    {
-      label: 'Attendance records',
-      value: stats.totalAttendance ?? 0,
-      icon:  CheckCircle,
-      color: 'var(--brand)',
-      bg:    'var(--brand-subtle)',
-      border:'var(--brand-border)',
-    },
-    {
-      label: 'Platform rate',
-      value: `${stats.attendanceRate ?? 0}%`,
-      icon:  TrendingUp,
-      color: 'var(--green)',
-      bg:    'var(--green-bg)',
-      border:'var(--green-border)',
-    },
+    { label: 'Platform rate',      value: isLoading ? '...' : `${stats.attendanceRate ?? 0}%`, tone: 'green', featured: true, framed: true, hint: 'Present or late, across every session' },
+    { label: 'Live now',           value: n(stats.activeSessions),  tone: 'red',    hint: 'Sessions taking attendance' },
+    { label: 'Students',           value: n(stats.totalStudents),   tone: 'violet', hint: 'Registered student accounts' },
+    { label: 'Lecturers',          value: n(stats.totalLecturers),  tone: 'brand',  hint: 'Registered lecturer accounts' },
+    { label: 'Classes',            value: n(stats.totalClasses),    tone: 'amber',  hint: 'Across both campuses' },
+    { label: 'Sessions held',      value: n(stats.totalSessions),   tone: 'brand',  hint: 'All time' },
+    { label: 'Attendance records', value: n(stats.totalAttendance), tone: 'green',  hint: 'Every scan, late mark and absence' },
+    { label: 'All users',          value: n(stats.totalUsers),      tone: 'muted',  hint: 'Students, lecturers and admins' },
   ];
 
   const QUICK_LINKS = [
@@ -164,114 +109,29 @@ export default function AdminDashboard() {
     <PageShell gap="var(--space-4)">
 
       {/* ── Welcome header ──────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING.gentle}
-      >
-        <div style={{
-          display:      'flex',
-          alignItems:   'center',
-          gap:          '8px',
-          marginBottom: '8px',
-        }}>
-          <div style={{
-            display:      'inline-flex',
-            alignItems:   'center',
-            gap:          '6px',
-            padding:      '3px 10px',
-            background:   'var(--violet-bg)',
-            border:       '1px solid var(--violet-border)',
-            borderRadius: 'var(--radius-pill)',
-          }}>
-            <Shield size={11} style={{ color: 'var(--violet)' }} strokeWidth={2.5} />
-            <span style={{
-              color:         'var(--violet)',
-              fontSize:      '10px',
-              fontWeight:    700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              fontFamily:    'var(--font-mono)',
-            }}>
-              System overview
-            </span>
-          </div>
-        </div>
-
-        <h1 style={{
-          fontFamily:    'var(--font-display)',
-          fontSize:      'var(--text-2xl)',
-          fontWeight:    700,
-          color:         'var(--text-primary)',
-          letterSpacing: '-0.02em',
-          lineHeight:    1.15,
-        }}>
-          Welcome back,{' '}
-          <span style={{
-            background:              'linear-gradient(135deg, var(--violet), #a78bfa)',
-            WebkitBackgroundClip:    'text',
-            WebkitTextFillColor:     'transparent',
-            backgroundClip:          'text',
-          }}>
-            {user?.name?.split(' ')[0] ?? user?.full_name?.split(' ')[0] ?? 'Admin'}
-          </span>
-        </h1>
-        <p style={{
-          color:     'var(--text-muted)',
-          fontSize:  'var(--text-md)',
-          marginTop: '6px',
-        }}>
-          Here's the state of the entire platform at a glance.
-        </p>
-      </motion.div>
+      <PageHeader
+        kicker={`Admin / ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
+        title="Welcome back,"
+        accent={`${user?.name?.split(' ')[0] ?? user?.full_name?.split(' ')[0] ?? 'Admin'}.`}
+        subtitle="The whole campus at a glance. Numbers refresh every 30 seconds."
+      />
 
       {/* ── Stats grid ──────────────────────────────────────── */}
-      <AnimatedList
-        style={{
-          display:             'grid',
-          gap:                 'var(--space-3)',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-        }}
-      >
-        {STAT_CARDS.map(card => (
+      <AnimatedList className="grid-4">
+        {STAT_CARDS.map((card, i) => (
           <AnimatedItem
             key={card.label}
             whileHover={{ y: -3 }}
             transition={SPRING.snappy}
           >
-            <StatCard isLoading={isLoading} {...card} />
+            <StatTile {...card} index={i + 1} />
           </AnimatedItem>
         ))}
       </AnimatedList>
 
       {/* ── Quick actions ───────────────────────────────────── */}
       <div>
-        <div style={{
-          display:        'flex',
-          alignItems:     'center',
-          justifyContent: 'space-between',
-          marginBottom:   'var(--space-3)',
-        }}>
-          <h3 style={{
-            fontFamily:    'var(--font-display)',
-            fontWeight:    600,
-            fontSize:      'var(--text-md)',
-            color:         'var(--text-primary)',
-            letterSpacing: '-0.01em',
-          }}>
-            Quick actions
-          </h3>
-          <span style={{
-            color:         'var(--text-muted)',
-            fontSize:      '10px',
-            fontWeight:    600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            fontFamily:    'var(--font-mono)',
-          }}>
-            Most-used routes
-          </span>
-        </div>
+        <SectionTitle kicker="Most-used routes" title="Quick actions" style={{ marginBottom: 'var(--space-3)' }} />
 
         <AnimatedList
           style={{
@@ -298,185 +158,55 @@ export default function AdminDashboard() {
   );
 }
 
-// ─── Stat card ─────────────────────────────────────────────────
-function StatCard({ label, value, icon: Icon, color, bg, border, pulse, isLoading }) {
-  return (
-    <div style={{
-      position:     'relative',
-      background:   'var(--bg-card)',
-      borderRadius: 'var(--radius-molecular)',
-      padding:      'var(--space-3)',
-      boxShadow:    'var(--shadow-md)',
-      overflow:     'hidden',
-      height:       '100%',
-    }}>
-      {/* Ambient glow in the corner */}
-      <div style={{
-        position:      'absolute',
-        top:           '-40px',
-        right:         '-40px',
-        width:         '120px',
-        height:        '120px',
-        background:    bg,
-        filter:        'blur(40px)',
-        opacity:       0.7,
-        pointerEvents: 'none',
-      }} />
-
-      {/* Icon tile */}
-      <div style={{
-        position:       'relative',
-        width:          '36px',
-        height:         '36px',
-        borderRadius:   'var(--radius-atomic)',
-        background:     bg,
-        border:         `1px solid ${border}`,
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'center',
-        marginBottom:   'var(--space-2)',
-      }}>
-        <Icon size={17} style={{ color }} strokeWidth={2.2} />
-        {pulse && (
-          <span
-            className="live-dot"
-            style={{
-              position:  'absolute',
-              top:       '-3px',
-              right:     '-3px',
-              boxShadow: '0 0 0 2px var(--bg-card)',
-            }}
-          />
-        )}
-      </div>
-
-      {/* Value */}
-      <p style={{
-        position:   'relative',
-        fontFamily: 'var(--font-display)',
-        fontSize:   'var(--text-2xl)',
-        fontWeight: 700,
-        color,
-        lineHeight: 1.1,
-      }}>
-        {isLoading ? (
-          <span
-            className="shimmer"
-            style={{
-              display:      'inline-block',
-              width:        '60px',
-              height:       '30px',
-              borderRadius: 'var(--radius-atomic)',
-            }}
-          />
-        ) : value}
-      </p>
-      <p style={{
-        position:  'relative',
-        color:     'var(--text-muted)',
-        fontSize:  'var(--text-sm)',
-        marginTop: '4px',
-      }}>
-        {label}
-      </p>
-    </div>
-  );
-}
-
 // ─── Quick link card ───────────────────────────────────────────
-function QuickLinkCard({ label, desc, icon: Icon, color, bg, border, onClick }) {
+function QuickLinkCard({ label, desc, icon: Icon, color, onClick }) {
   return (
     <motion.button
       whileTap={TAP.card}
       onClick={onClick}
+      className="quick-link"
       style={{
         display:       'flex',
         flexDirection: 'column',
-        gap:           'var(--space-2)',
+        gap:           'var(--space-4)',
         textAlign:     'left',
         background:    'var(--bg-card)',
-        border:        `1px solid ${border}`,
+        border:        'none',
         borderRadius:  'var(--radius-molecular)',
-        padding:       'var(--space-3)',
+        padding:       '20px',
         boxShadow:     'var(--shadow-md)',
         cursor:        'pointer',
-        position:      'relative',
-        overflow:      'hidden',
         width:         '100%',
+        height:        '100%',
         fontFamily:    'var(--font-body)',
-        transition:    `border-color ${DURATION.base}ms ${EASE.state}`,
+        color:         'var(--text-primary)',
       }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = color;   }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = border;  }}
     >
-      {/* Ambient glow */}
-      <div style={{
-        position:      'absolute',
-        top:           '-50px',
-        right:         '-50px',
-        width:         '140px',
-        height:        '140px',
-        background:    bg,
-        filter:        'blur(50px)',
-        opacity:       0.6,
-        pointerEvents: 'none',
-      }} />
-
-      {/* Header: icon + arrow */}
-      <div style={{
-        position:       'relative',
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'space-between',
-      }}>
-        <div style={{
-          width:          '40px',
-          height:         '40px',
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+        <span style={{
+          width:          38,
+          height:         38,
           borderRadius:   'var(--radius-atomic)',
-          background:     bg,
-          border:         `1px solid ${border}`,
-          display:        'flex',
+          background:     'var(--bg-raised)',
+          display:        'inline-flex',
           alignItems:     'center',
           justifyContent: 'center',
         }}>
-          <Icon size={18} style={{ color }} strokeWidth={2.2} />
-        </div>
-
-        <motion.div
-          whileHover={{ x: 3 }}
-          transition={SPRING.snappy}
-          style={{
-            width:          '28px',
-            height:         '28px',
-            borderRadius:   'var(--radius-pill)',
-            background:     'var(--bg-raised)',
-            display:        'flex',
-            alignItems:     'center',
-            justifyContent: 'center',
-            color:          'var(--text-muted)',
-          }}
-        >
-          <ArrowUpRight size={14} />
-        </motion.div>
+          <Icon size={17} style={{ color }} strokeWidth={2.2} />
+        </span>
+        <ArrowUpRight size={16} className="quick-link-arrow" style={{ color: 'var(--text-muted)', transition: `transform ${DURATION.base}s ${EASE.state}` }} />
       </div>
-
-      {/* Label + desc */}
-      <div style={{ position: 'relative' }}>
+      <div>
         <p style={{
-          color,
-          fontWeight:    700,
-          fontSize:      'var(--text-sm)',
+          fontWeight:    650,
+          fontSize:      'var(--text-md)',
           fontFamily:    'var(--font-display)',
-          letterSpacing: '-0.005em',
-          marginBottom:  '4px',
+          letterSpacing: '-0.02em',
+          marginBottom:  4,
         }}>
           {label}
         </p>
-        <p style={{
-          color:      'var(--text-muted)',
-          fontSize:   'var(--text-xs)',
-          lineHeight: 1.5,
-        }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)', lineHeight: 1.5 }}>
           {desc}
         </p>
       </div>

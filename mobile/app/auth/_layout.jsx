@@ -28,32 +28,19 @@ export default function AuthLayout() {
     <View style={{ flex: 1, backgroundColor: t.colors.bg }}>
       <StatusBar style={resolvedMode === 'dark' ? 'light' : 'dark'} />
 
-      {/* Ambient brand glow — top-right corner */}
+      {/* One quiet wash of cobalt, top right. The page is paper,
+          not a light show. */}
       <View
         pointerEvents="none"
         style={{
           position:        'absolute',
-          top:             -100,
-          right:           -100,
-          width:           280,
-          height:          280,
+          top:             -140,
+          right:           -140,
+          width:           320,
+          height:          320,
           backgroundColor: t.colors.brandSubtle,
           borderRadius:    t.radius.pill,
-          opacity:         0.8,
-        }}
-      />
-      {/* Secondary glow — bottom-left, subtle */}
-      <View
-        pointerEvents="none"
-        style={{
-          position:        'absolute',
-          bottom:          -120,
-          left:            -120,
-          width:           240,
-          height:          240,
-          backgroundColor: t.colors.brandSubtle,
-          borderRadius:    t.radius.pill,
-          opacity:         0.4,
+          opacity:         0.7,
         }}
       />
 

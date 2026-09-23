@@ -5,8 +5,7 @@ import Animated, {
 }                                             from 'react-native-reanimated';
 import { router, Link }                       from 'expo-router';
 import {
-  Mail, Lock, LogIn, ArrowRight,
-  Eye, EyeOff,
+  Mail, Lock, ArrowRight, Eye, EyeOff,
 }                                             from 'lucide-react-native';
 
 import api                                    from '../../services/api';
@@ -17,7 +16,7 @@ import { useTheme }                           from '../../src/theme/ThemeProvide
 import Card                                   from '../../src/components/ui/Card';
 import Button                                 from '../../src/components/ui/Button';
 import Input                                  from '../../src/components/ui/Input';
-import IconTile                               from '../../src/components/ui/IconTile';
+import BrandMark, { Kicker }                  from '../../src/components/ui/BrandMark';
 import { DURATION }                           from '../../src/lib/motion';
 
 /**
@@ -92,33 +91,34 @@ export default function LoginScreen() {
       {/* ── Hero ───────────────────────────────────────── */}
       <Animated.View
         entering={FadeInUp.duration(DURATION.slow)}
-        style={{ alignItems: 'flex-start', gap: t.spacing.sm }}
+        style={{ alignItems: 'flex-start', gap: t.spacing.lg }}
       >
-        <IconTile icon={LogIn} tone="brand" size="lg" shadow />
-        <View style={{ gap: 4 }}>
+        <BrandMark size={34} />
+        <View style={{ gap: 12 }}>
+          <Kicker dot>Sign in</Kicker>
           <Text style={{
             fontFamily:    t.fontFamily.displayBold,
-            fontSize:      t.fontSize.xxl,
+            fontSize:      42,
             color:         t.colors.textPrimary,
-            letterSpacing: t.letterSpacing.tight,
-            lineHeight:    t.fontSize.xxl * 1.1,
+            letterSpacing: t.letterSpacing.display,
+            lineHeight:    44,
           }}>
-            Welcome back
+            Welcome back.
           </Text>
           <Text style={{
             fontFamily: t.fontFamily.body,
-            fontSize:   t.fontSize.sm,
-            color:      t.colors.textMuted,
-            lineHeight: t.fontSize.sm * 1.5,
+            fontSize:   t.fontSize.md,
+            color:      t.colors.textSecondary,
+            lineHeight: t.fontSize.md * 1.5,
           }}>
-            Sign in to AttendX to mark your attendance.
+            Mark your seat in today's session, or open one for your class.
           </Text>
         </View>
       </Animated.View>
 
       {/* ── Form card ──────────────────────────────────── */}
       <Animated.View entering={FadeInUp.delay(100).duration(DURATION.slow)}>
-        <Card accent="brand" accentIntensity="subtle">
+        <Card>
           <View style={{ gap: t.spacing.md }}>
             <Input
               label="Email address"

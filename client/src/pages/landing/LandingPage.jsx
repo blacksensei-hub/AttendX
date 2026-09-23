@@ -6,7 +6,7 @@ import { ArrowRight, ArrowUpRight }                 from 'lucide-react';
 
 import BrandMark                                    from '../../components/ui/BrandMark';
 import { mountScrubHero }                           from './scrubHero';
-import { mountAnchorScroll }                        from './anchorScroll';
+import { mountAnchorScroll, compactNavClearance }   from './anchorScroll';
 import './landing.css';
 
 /**
@@ -93,18 +93,29 @@ export default function LandingPage() {
   const rootRef           = useRef(null);
   const heroRef           = useRef(null);
   const [onHero, setOnHero] = useState(true);
+  const [compact, setCompact] = useState(() => window.scrollY > 24);
 
   useEffect(() => mountScrubHero(heroRef.current), []);
   useEffect(() => mountAnchorScroll(rootRef.current), []);
 
-  // Nav reads light-on-dark while it sits over the hero
+  // Nav reads light-on-dark while it sits over the hero. It is always
+  // the compact pill by the time the hero scrolls out from under it, so
+  // the pill's bottom edge is the line that matters.
   useEffect(() => {
+    const clearance = compactNavClearance(rootRef.current);
     const io = new IntersectionObserver(
       ([e]) => setOnHero(e.isIntersecting),
-      { rootMargin: '-68px 0px 0px 0px', threshold: 0 },
+      { rootMargin: `-${clearance}px 0px 0px 0px`, threshold: 0 },
     );
     io.observe(heroRef.current);
     return () => io.disconnect();
+  }, []);
+
+  // Nav becomes a floating pill as soon as the page scrolls
+  useEffect(() => {
+    const onScroll = () => setCompact(window.scrollY > 24);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   // Pause CSS loops on hidden tabs
@@ -125,19 +136,21 @@ export default function LandingPage() {
       <a href="#how" className="sr-only">Skip the intro</a>
 
       {/* ── Nav ─────────────────────────────────────────────── */}
-      <header className={`lp-nav${onHero ? ' on-hero' : ''}`}>
-        <Link to="/" aria-label="AttendX" style={{ display: 'inline-flex' }}>
-          <BrandMark size={30} tone={onHero ? 'inverse' : 'default'} />
-        </Link>
-        <nav className="lp-nav-links" aria-label="Page">
-          <a href="#how">How it works</a>
-          <a href="#register">Try it</a>
-          <a href="#roles">Who it's for</a>
-          <a href="#faq">Questions</a>
-        </nav>
-        <Link to="/login" className="btn-accent lp-signin">
-          Sign in <ArrowUpRight size={15} />
-        </Link>
+      <header className={`lp-nav${onHero ? ' on-hero' : ''}${compact ? ' is-compact' : ''}`}>
+        <div className="lp-nav-bar">
+          <Link to="/" aria-label="AttendX" className="lp-logo">
+            <BrandMark size={30} tone={onHero ? 'inverse' : 'default'} />
+          </Link>
+          <nav className="lp-nav-links" aria-label="Page">
+            <a href="#how">How it works</a>
+            <a href="#register">Try it</a>
+            <a href="#roles">Who it's for</a>
+            <a href="#faq">Questions</a>
+          </nav>
+          <Link to="/login" className="btn-accent lp-signin">
+            Sign in <ArrowUpRight size={15} />
+          </Link>
+        </div>
       </header>
 
       {/* ── Hero ────────────────────────────────────────────── */}
@@ -244,7 +257,12 @@ export default function LandingPage() {
       <footer className="lp-foot">
         <BrandMark size={24} />
         <span>Final year project, Ghana Communication Technology University.</span>
-        <span className="kicker">Hero footage is AI generated</span>
+        <nav className="lp-foot-links" aria-label="Footer">
+          <a href="#how">How it works</a>
+          <a href="#faq">Questions</a>
+          <Link to="/login">Sign in</Link>
+          <Link to="/register">Create an account</Link>
+        </nav>
       </footer>
     </div>
   );

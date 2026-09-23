@@ -15,6 +15,7 @@ import ImpersonationBanner                   from '../ImpersonationBanner';
 import { useAuthStore }                      from '../../store/authStore';
 import { useUIStore }                        from '../../store/uiStore';
 import { prefetchRoute }                     from '../../router/prefetch';
+import { useScrolledPast }                   from '../../hooks/useScrolledPast';
 import api                                   from '../../services/api';
 import { EASE, SPRING, TAP }                 from '../../lib/motion';
 
@@ -26,6 +27,9 @@ import { EASE, SPRING, TAP }                 from '../../lib/motion';
  *   left    the vector BrandMark
  *   centre  the role's nav as a segmented rail (≥ 1100px)
  *   right   notifications, theme, and a user menu with sign out
+ *
+ * Once the page scrolls, the bar lifts into a centred floating pill,
+ * the same move the landing nav makes (styles: .app-nav in App.css).
  *
  * Under 1100px the rail folds into a full-screen menu set in big
  * numbered display type ("01 Dashboard").
@@ -100,13 +104,20 @@ export default function AppShell({ role }) {
   const { user, logout } = useAuthStore();
   const navigate      = useNavigate();
   const items         = NAV[role] ?? NAV.student;
+  // Pill once scrolled, but never under the open full-screen menu,
+  // whose panel starts right below the bar.
+  const pill          = useScrolledPast(16) && !open;
 
   usePauseWhenHidden();
 
-  // Lock page scroll behind the open menu
+  // Lock page scroll behind the open menu. On <html>, not <body>: html
+  // carries overflow-x: clip, so an overflow on body would make body its
+  // own scroll box and the sticky top bar (with the close button) would
+  // scroll away with the page.
   useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
+    const root = document.documentElement;
+    root.style.overflow = open ? 'hidden' : '';
+    return () => { root.style.overflow = ''; };
   }, [open]);
 
   useEffect(() => {
@@ -143,55 +154,40 @@ export default function AppShell({ role }) {
       </a>
 
       {/* ── Top bar ─────────────────────────────────────────── */}
-      <header style={{
-        position:             'sticky',
-        top:                  0,
-        zIndex:               40,
-        height:               68,
-        display:              'flex',
-        alignItems:           'center',
-        gap:                  16,
-        padding:              '0 clamp(16px, 3vw, 40px)',
-        background:           'var(--topbar-bg)',
-        backdropFilter:       'blur(18px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-        borderBottom:         '1px solid var(--border)',
-      }}>
-        <NavLink
-          to={items[0].to}
-          aria-label="AttendX home"
-          style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none', minWidth: 0 }}
-        >
-          <BrandMark size={30} suffix={role === 'admin' ? 'Admin' : undefined} />
-        </NavLink>
+      <header className={`app-nav${pill ? ' is-compact' : ''}`}>
+        <div className="app-nav-bar">
+          <NavLink to={items[0].to} aria-label="AttendX home" className="app-nav-logo">
+            <BrandMark size={30} suffix={role === 'admin' ? 'Admin' : undefined} />
+          </NavLink>
 
-        {wide && (
-          <nav aria-label="Main" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <Rail items={items} badges={badges} />
-          </nav>
-        )}
-
-        <div style={{
-          marginLeft: wide ? 0 : 'auto',
-          display:    'flex',
-          alignItems: 'center',
-          gap:        8,
-          flexShrink: 0,
-        }}>
-          {role !== 'admin' && <NotificationPanel />}
-          <UserMenu user={user} role={role} onLogout={handleLogout} compact={!wide} />
-          {!wide && (
-            <motion.button
-              whileTap={TAP.button}
-              onClick={() => setOpen(o => !o)}
-              aria-expanded={open}
-              aria-controls="app-menu"
-              aria-label={open ? 'Close menu' : 'Open menu'}
-              style={iconButtonStyle}
-            >
-              {open ? <X size={18} /> : <Menu size={18} />}
-            </motion.button>
+          {wide && (
+            <nav aria-label="Main" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+              <Rail items={items} badges={badges} />
+            </nav>
           )}
+
+          <div style={{
+            marginLeft: wide ? 0 : 'auto',
+            display:    'flex',
+            alignItems: 'center',
+            gap:        8,
+            flexShrink: 0,
+          }}>
+            {role !== 'admin' && <NotificationPanel />}
+            <UserMenu user={user} role={role} onLogout={handleLogout} compact={!wide} />
+            {!wide && (
+              <motion.button
+                whileTap={TAP.button}
+                onClick={() => setOpen(o => !o)}
+                aria-expanded={open}
+                aria-controls="app-menu"
+                aria-label={open ? 'Close menu' : 'Open menu'}
+                style={iconButtonStyle}
+              >
+                {open ? <X size={18} /> : <Menu size={18} />}
+              </motion.button>
+            )}
+          </div>
         </div>
       </header>
 

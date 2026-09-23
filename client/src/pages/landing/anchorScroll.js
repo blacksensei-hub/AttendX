@@ -25,20 +25,33 @@
 
 const GAP = 28;   // px between the nav's bottom edge and the content
 
+// How much of the top of the screen the nav covers once it has become
+// the floating pill: its gap from the top plus its height. Both come
+// from CSS custom properties on .lp so the numbers live in one place.
+export function compactNavClearance(root) {
+  const css = getComputedStyle(root);
+  const px  = name => parseFloat(css.getPropertyValue(name)) || 0;
+  return px('--nav-top-compact') + px('--nav-h-compact') || 68;
+}
+
 const easeInOutCubic = t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const reducedMotion  = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const durationFor    = distance => Math.min(1400, 450 + Math.sqrt(Math.abs(distance)) * 9);
 
 export function mountAnchorScroll(root) {
-  const nav = root.querySelector('.lp-nav');
   let raf = 0;
   let removeInterrupts = null;
+
+  // The nav is always the compact pill by the time a glide lands
+  // (every section sits far below the top), so clear that rather than
+  // the full bar it may be at the moment of the click.
+  const navHeight = () => compactNavClearance(root);
 
   // Where the section's content starts: its first child, not the
   // section box, whose top padding would leave a large empty band.
   const targetY = section => {
     const anchor = section.firstElementChild ?? section;
-    const y = anchor.getBoundingClientRect().top + window.scrollY - (nav?.offsetHeight ?? 68) - GAP;
+    const y = anchor.getBoundingClientRect().top + window.scrollY - navHeight() - GAP;
     const max = document.documentElement.scrollHeight - window.innerHeight;
     return Math.round(Math.min(max, Math.max(0, y)));
   };

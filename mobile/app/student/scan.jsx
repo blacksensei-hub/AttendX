@@ -366,7 +366,7 @@ function SuccessCard({ message }) {
       style={[s.resultBox, s.successBox]}
     >
       <Animated.View style={iconStyle}>
-        <CheckCircle2 size={32} color="#10b981" strokeWidth={2.4} />
+        <CheckCircle2 size={32} color={TEAL} strokeWidth={2.4} />
       </Animated.View>
       <Text style={s.resultText}>{message}</Text>
       <Text style={s.resultSub}>Redirecting to dashboard…</Text>
@@ -398,7 +398,7 @@ function ErrorCard({ message }) {
       style={[shakeStyle]}
     >
       <View style={[s.resultBox, s.errorBox]}>
-        <XCircle size={32} color="#ef4444" strokeWidth={2.4} />
+        <XCircle size={32} color="#FF6B77" strokeWidth={2.4} />
         <Text style={s.resultText}>{message}</Text>
         <Text style={s.resultSub}>Try again in a moment</Text>
       </View>
@@ -415,11 +415,12 @@ function ErrorCard({ message }) {
 const FRAME_SIZE = 240;
 const CORNER_LEN = 32;
 const CORNER_W   = 4;
-const BRAND_COLOR = '#3b82f6';
+const BRAND_COLOR = '#6F8BFF';   // the bracket blue from the AttendX mark
+const TEAL        = '#14C9A6';   // the check: present
 
 const s = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: '#000' },
-  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  container:  { flex: 1, backgroundColor: '#070D1F' },
+  overlay:    { flex: 1, backgroundColor: 'rgba(7,13,31,0.45)' },
 
   topBar: {
     flexDirection:  'row',
@@ -440,15 +441,15 @@ const s = StyleSheet.create({
   },
   topCenter: { alignItems: 'center', gap: 2 },
   topTitle: {
-    color:      '#fff',
-    fontWeight: '700',
-    fontSize:   15,
-    letterSpacing: 0.2,
+    color:      '#EEF1F7',
+    fontFamily: 'Bricolage-Bold',
+    fontSize:   17,
+    letterSpacing: -0.4,
   },
   topSubtitle: {
-    color:      'rgba(255,255,255,0.55)',
+    color:      'rgba(238,241,247,0.56)',
+    fontFamily: 'PlexMono',
     fontSize:   10,
-    fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
@@ -466,10 +467,10 @@ const s = StyleSheet.create({
     height:      CORNER_LEN,
     borderColor: BRAND_COLOR,
   },
-  tl: { top: 0,    left: 0,  borderTopWidth: CORNER_W,    borderLeftWidth: CORNER_W  },
-  tr: { top: 0,    right: 0, borderTopWidth: CORNER_W,    borderRightWidth: CORNER_W },
-  bl: { bottom: 0, left: 0,  borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W  },
-  br: { bottom: 0, right: 0, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W },
+  tl: { top: 0,    left: 0,  borderTopWidth: CORNER_W,    borderLeftWidth: CORNER_W,   borderTopLeftRadius: 14 },
+  tr: { top: 0,    right: 0, borderTopWidth: CORNER_W,    borderRightWidth: CORNER_W,  borderTopRightRadius: 14 },
+  bl: { bottom: 0, left: 0,  borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W,  borderBottomLeftRadius: 14 },
+  br: { bottom: 0, right: 0, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W, borderBottomRightRadius: 14 },
 
   // The animated horizontal sweep line
   sweep: {
@@ -478,8 +479,8 @@ const s = StyleSheet.create({
     right:           0,
     top:             0,
     height:          2,
-    backgroundColor: BRAND_COLOR,
-    shadowColor:     BRAND_COLOR,
+    backgroundColor: TEAL,
+    shadowColor:     TEAL,
     shadowOpacity:   0.9,
     shadowOffset:    { width: 0, height: 0 },
     shadowRadius:    8,
@@ -497,24 +498,25 @@ const s = StyleSheet.create({
     flexDirection:   'row',
     alignItems:      'center',
     gap:             10,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(8,12,26,0.6)',
     borderWidth:     1,
-    borderColor:     'rgba(255,255,255,0.14)',
+    borderColor:     'rgba(150,165,220,0.22)',
     borderRadius:    14,
     paddingVertical: 12,
     paddingHorizontal: 16,
     maxWidth:        320,
   },
   hintText: {
-    color:      'rgba(255,255,255,0.85)',
-    fontSize:   12,
+    color:      'rgba(238,241,247,0.85)',
+    fontFamily: 'Figtree',
+    fontSize:   13,
     flexShrink: 1,
     lineHeight: 16,
   },
 
   resultBox: {
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderRadius:    18,
+    backgroundColor: 'rgba(7,13,31,0.9)',
+    borderRadius:    20,
     paddingVertical:   20,
     paddingHorizontal: 24,
     alignItems:      'center',
@@ -524,18 +526,19 @@ const s = StyleSheet.create({
     minWidth:        260,
     maxWidth:        320,
   },
-  successBox: { borderColor: 'rgba(16,185,129,0.5)' },
-  errorBox:   { borderColor: 'rgba(239,68,68,0.5)'  },
+  successBox: { borderColor: 'rgba(20,201,166,0.55)' },
+  errorBox:   { borderColor: 'rgba(255,107,119,0.5)' },
 
   resultText: {
-    color:      '#fff',
-    fontSize:   15,
+    color:      '#EEF1F7',
+    fontFamily: 'Figtree-SemiBold',
+    fontSize:   16,
     textAlign:  'center',
-    fontWeight: '600',
     lineHeight: 20,
   },
   resultSub: {
-    color:    'rgba(255,255,255,0.55)',
+    color:    'rgba(238,241,247,0.56)',
+    fontFamily: 'PlexMono',
     fontSize: 11,
     textAlign:'center',
   },

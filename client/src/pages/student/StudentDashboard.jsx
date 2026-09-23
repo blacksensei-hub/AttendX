@@ -17,7 +17,8 @@ import { sessionService }                       from '../../services/sessionServ
 import { useAuthStore }                         from '../../store/authStore';
 import api                                      from '../../services/api';
 
-import PageShell                                from '../../components/layout/PageShell';
+import PageShell, { PageHeader }                from '../../components/layout/PageShell';
+import StatTile, { SectionTitle }               from '../../components/ui/StatTile';
 import { AnimatedList, AnimatedItem }           from '../../components/ui/AnimatedList';
 import { SPRING, TAP, EASE }                    from '../../lib/motion';
 
@@ -119,9 +120,9 @@ export default function StudentDashboard() {
 
   // ── Charts data ──────────────────────────────────────────────
   const pieData = [
-    { name: 'Present', value: myStats?.present ?? 0, color: 'var(--green)' },
-    { name: 'Late',    value: myStats?.late    ?? 0, color: 'var(--amber)' },
-    { name: 'Absent',  value: myStats?.absent  ?? 0, color: 'var(--red)'   },
+    { name: 'Present', value: myStats?.present ?? 0, color: 'var(--green-fill)' },
+    { name: 'Late',    value: myStats?.late    ?? 0, color: 'var(--amber-fill)' },
+    { name: 'Absent',  value: myStats?.absent  ?? 0, color: 'var(--red-fill)'   },
   ];
 
   // The trend chart needs at least 2 points to be meaningful. If
@@ -131,68 +132,36 @@ export default function StudentDashboard() {
   const hasTrend  = trendData.length >= 2;
 
   const STAT_CARDS = [
-    {
-      label: 'Classes',
-      value: classes.length,
-      icon:  BookOpen,
-      color: 'var(--brand)',
-      bg:    'var(--brand-subtle)',
-      border:'var(--brand-border)',
-    },
-    {
-      label: 'Sessions attended',
-      value: myStats?.totalSessions ?? 0,
-      icon:  CheckCircle,
-      color: 'var(--green)',
-      bg:    'var(--green-bg)',
-      border:'var(--green-border)',
-    },
-    {
-      label: 'On-time rate',
-      value: `${myStats?.onTimeRate ?? 0}%`,
-      icon:  Sparkles,
-      color: 'var(--violet)',
-      bg:    'var(--violet-bg)',
-      border:'var(--violet-border)',
-    },
-    {
-      label: 'This month',
-      value: `${myStats?.thisMonth ?? 0}%`,
-      icon:  TrendingUp,
-      color: 'var(--amber)',
-      bg:    'var(--amber-bg)',
-      border:'var(--amber-border)',
-    },
+    { label: 'This month',        value: `${myStats?.thisMonth ?? 0}%`,  tone: 'green',  featured: true, hint: 'Your attendance across every class this month' },
+    { label: 'Sessions attended', value: myStats?.totalSessions ?? 0,    tone: 'brand',  hint: 'Present or late, all time' },
+    { label: 'On time',           value: `${myStats?.onTimeRate ?? 0}%`, tone: 'amber',  hint: 'Scanned before the late window' },
+    { label: 'Classes',           value: classes.length,                 tone: 'violet', hint: 'Enrolled this semester' },
   ];
+
+  const firstName = user?.name?.split(' ')[0] ?? '';
+  const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <PageShell gap="var(--space-4)">
 
       {/* ── Welcome header ──────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING.gentle}
-      >
-        <h1 style={{
-          fontFamily:    'var(--font-display)',
-          fontSize:      'var(--text-2xl)',
-          fontWeight:    700,
-          color:         'var(--text-primary)',
-          letterSpacing: '-0.02em',
-          lineHeight:    1.15,
-        }}>
-          Hi, <span className="gradient-text">{user?.name?.split(' ')[0]}</span>
-        </h1>
-        <p style={{
-          color:     'var(--text-muted)',
-          fontSize:  'var(--text-md)',
-          marginTop: '6px',
-        }}>
-          You have {activeSessions.length} active session
-          {activeSessions.length !== 1 ? 's' : ''} right now.
-        </p>
-      </motion.div>
+      <PageHeader
+        kicker={`Student / ${today}`}
+        title="Hi,"
+        accent={`${firstName}.`}
+        subtitle={activeSessions.length > 0
+          ? `${activeSessions.length} session${activeSessions.length !== 1 ? 's are' : ' is'} open right now. Mark your seat before it closes.`
+          : 'Nothing is open right now. The moment a lecturer starts a session, it shows up here.'}
+        action={
+          <motion.button
+            whileTap={TAP.button}
+            onClick={() => navigate('/student/scan')}
+            className="btn-primary"
+          >
+            <Radio size={15} /> Open scanner
+          </motion.button>
+        }
+      />
 
       {/* ── At-risk threshold warning (dismissable) ──────────── */}
       <AnimatePresence>
@@ -398,159 +367,82 @@ export default function StudentDashboard() {
         )}
       </AnimatePresence>
 
-      {/* ── Active sessions banner ──────────────────────────── */}
+      {/* ── Active sessions: the one thing to do right now ──── */}
       {activeSessions.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 8, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={SPRING.snappy}
-          style={{
-            padding:      'var(--space-3)',
-            background:   'var(--brand-subtle)',
-            border:       '1px solid var(--brand-border)',
-            borderRadius: 'var(--radius-molecular)',
-            boxShadow:    'var(--shadow-sm)',
-          }}
+          className="scanframe is-teal is-live"
+          style={{ '--radius-molecular': '20px' }}
         >
           <div style={{
-            display:      'flex',
-            alignItems:   'center',
-            gap:          'var(--space-2)',
-            marginBottom: 'var(--space-2)',
+            padding:      'var(--space-4)',
+            background:   'var(--bg-inverse)',
+            color:        'var(--text-inverse)',
+            borderRadius: 20,
+            boxShadow:    'var(--shadow-lg)',
           }}>
-            <span className="live-dot" style={{ width: '10px', height: '10px' }} />
-            <p style={{
-              color:      'var(--brand-text)',
-              fontWeight: 700,
-              fontSize:   'var(--text-sm)',
-              fontFamily: 'var(--font-display)',
-            }}>
-              Active sessions — mark your attendance now
+            <p className="kicker" style={{ color: 'color-mix(in srgb, var(--text-inverse) 65%, transparent)', marginBottom: 'var(--space-3)' }}>
+              <span className="live-dot" /> Live now / mark your seat
             </p>
+            <AnimatedList style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {activeSessions.map(session => {
+                const marked = session.markedStatus;
+                return (
+                  <AnimatedItem key={session.id}>
+                    <div style={{
+                      display:        'flex',
+                      alignItems:     'center',
+                      justifyContent: 'space-between',
+                      gap:            'var(--space-3)',
+                      flexWrap:       'wrap',
+                      paddingTop:     10,
+                      borderTop:      '1px solid color-mix(in srgb, var(--text-inverse) 14%, transparent)',
+                    }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{
+                          fontFamily:    'var(--font-display)',
+                          fontWeight:    650,
+                          fontSize:      'var(--text-lg)',
+                          letterSpacing: '-0.02em',
+                        }}>
+                          {session.className}
+                        </p>
+                        <p style={{ fontSize: 'var(--text-sm)', opacity: 0.7, marginTop: 2 }}>
+                          {session.title || 'Attendance session'}
+                        </p>
+                      </div>
+                      {marked ? (
+                        <span className="kicker" style={{ color: 'var(--green-fill)' }}>
+                          <CheckCircle size={14} /> Marked{marked === 'late' ? ' (late)' : ''}
+                        </span>
+                      ) : (
+                        <motion.button
+                          whileTap={TAP.button}
+                          whileHover={{ x: 2 }}
+                          transition={SPRING.snappy}
+                          onClick={() => navigate(`/student/scan?sessionId=${session.id}`)}
+                          className="btn-accent"
+                          style={{ flexShrink: 0 }}
+                        >
+                          Mark attendance <ArrowRight size={15} />
+                        </motion.button>
+                      )}
+                    </div>
+                  </AnimatedItem>
+                );
+              })}
+            </AnimatedList>
           </div>
-
-          <AnimatedList
-            style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
-          >
-            {activeSessions.map(session => (
-              <AnimatedItem key={session.id}>
-                <div style={{
-                  display:        'flex',
-                  alignItems:     'center',
-                  justifyContent: 'space-between',
-                  gap:            'var(--space-2)',
-                  background:     'var(--bg-card)',
-                  border:         '1px solid var(--brand-border)',
-                  borderRadius:   'var(--radius-atomic)',
-                  padding:        '10px 14px',
-                  flexWrap:       'wrap',
-                }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <p style={{
-                      color:      'var(--text-primary)',
-                      fontWeight: 600,
-                      fontSize:   'var(--text-sm)',
-                    }}>
-                      {session.className}
-                    </p>
-                    <p style={{
-                      color:     'var(--text-muted)',
-                      fontSize:  'var(--text-xs)',
-                      marginTop: '2px',
-                    }}>
-                      {session.title || 'Attendance session'}
-                    </p>
-                  </div>
-                  <motion.button
-                    whileTap={TAP.button}
-                    whileHover={{ x: 2 }}
-                    transition={SPRING.snappy}
-                    onClick={() => navigate(`/student/scan?sessionId=${session.id}`)}
-                    className="btn-primary"
-                    style={{ padding: '8px 14px', flexShrink: 0 }}
-                  >
-                    <Radio size={13} />
-                    Mark attendance
-                    <ArrowRight size={13} />
-                  </motion.button>
-                </div>
-              </AnimatedItem>
-            ))}
-          </AnimatedList>
         </motion.div>
       )}
 
-      {/* ── Stats grid (with proper icons) ──────────────────── */}
-      <AnimatedList
-        style={{
-          display:             'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap:                 'var(--space-3)',
-        }}
-      >
-        {STAT_CARDS.map(({ label, value, icon: Icon, color, bg, border }) => (
-          <AnimatedItem
-            key={label}
-            whileHover={{ y: -3 }}
-            transition={SPRING.snappy}
-          >
-            <div style={{
-              position:     'relative',
-              background:   'var(--bg-card)',
-              borderRadius: 'var(--radius-molecular)',
-              padding:      'var(--space-3)',
-              boxShadow:    'var(--shadow-md)',
-              overflow:     'hidden',
-              height:       '100%',
-            }}>
-              {/* Ambient glow in the corner */}
-              <div style={{
-                position:      'absolute',
-                top:           '-40px',
-                right:         '-40px',
-                width:         '120px',
-                height:        '120px',
-                background:    bg,
-                filter:        'blur(40px)',
-                opacity:       0.7,
-                pointerEvents: 'none',
-              }} />
-
-              {/* Icon tile — actually contains the icon now */}
-              <div style={{
-                position:       'relative',
-                width:          '36px',
-                height:         '36px',
-                borderRadius:   'var(--radius-atomic)',
-                background:     bg,
-                border:         `1px solid ${border}`,
-                marginBottom:   'var(--space-2)',
-                display:        'flex',
-                alignItems:     'center',
-                justifyContent: 'center',
-              }}>
-                <Icon size={18} style={{ color }} strokeWidth={2.2} />
-              </div>
-
-              <p style={{
-                position:   'relative',
-                fontFamily: 'var(--font-display)',
-                fontSize:   'var(--text-2xl)',
-                fontWeight: 700,
-                color,
-                lineHeight: 1.1,
-              }}>
-                {value}
-              </p>
-              <p style={{
-                position:  'relative',
-                color:     'var(--text-muted)',
-                fontSize:  'var(--text-sm)',
-                marginTop: '4px',
-              }}>
-                {label}
-              </p>
-            </div>
+      {/* ── Stats ──────────────────────────────────────────── */}
+      <AnimatedList className="grid-4">
+        {STAT_CARDS.map((card, i) => (
+          <AnimatedItem key={card.label} whileHover={{ y: -3 }} transition={SPRING.snappy}>
+            <StatTile {...card} index={i + 1} />
           </AnimatedItem>
         ))}
       </AnimatedList>
@@ -568,15 +460,7 @@ export default function StudentDashboard() {
             boxShadow:    'var(--shadow-md)',
           }}
         >
-          <h3 style={{
-            fontFamily:   'var(--font-display)',
-            fontWeight:   600,
-            color:        'var(--text-primary)',
-            marginBottom: 'var(--space-3)',
-            fontSize:     'var(--text-md)',
-          }}>
-            Attendance by class
-          </h3>
+          <SectionTitle kicker="By class" title="Where you stand" style={{ marginBottom: 'var(--space-4)' }} />
 
           <AnimatedList
             style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
@@ -617,15 +501,7 @@ export default function StudentDashboard() {
             boxShadow:    'var(--shadow-md)',
           }}
         >
-          <h3 style={{
-            fontFamily:   'var(--font-display)',
-            fontWeight:   600,
-            fontSize:     'var(--text-md)',
-            color:        'var(--text-primary)',
-            marginBottom: 'var(--space-3)',
-          }}>
-            Your attendance over time
-          </h3>
+          <SectionTitle kicker="Trend" title="Your attendance over time" style={{ marginBottom: 'var(--space-3)' }} />
 
           {hasTrend ? (
             <ResponsiveContainer width="100%" height={200}>
@@ -687,16 +563,7 @@ export default function StudentDashboard() {
             minWidth:       '200px',
           }}
         >
-          <h3 style={{
-            fontFamily:   'var(--font-display)',
-            fontWeight:   600,
-            fontSize:     'var(--text-md)',
-            color:        'var(--text-primary)',
-            marginBottom: 'var(--space-2)',
-            alignSelf:    'flex-start',
-          }}>
-            Breakdown
-          </h3>
+          <SectionTitle kicker="All time" title="Breakdown" style={{ marginBottom: 'var(--space-2)', alignSelf: 'stretch' }} />
 
           <PieChart width={160} height={160}>
             <Pie
@@ -860,7 +727,7 @@ function ClassRateRow({ r }) {
       {/* Progress bar with threshold marker */}
       <div style={{ flex: 2, minWidth: '140px', maxWidth: '220px', position: 'relative' }}>
         <div style={{
-          height:       '6px',
+          height:       '8px',
           background:   'var(--bg-raised)',
           borderRadius: 'var(--radius-pill)',
           overflow:     'hidden',

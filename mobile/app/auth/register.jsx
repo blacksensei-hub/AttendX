@@ -5,7 +5,7 @@ import Animated, {
 }                                             from 'react-native-reanimated';
 import { router, Link }                       from 'expo-router';
 import {
-  User, Mail, Lock, Hash, UserPlus,
+  User, Mail, Lock, Hash,
   ArrowRight, Eye, EyeOff, GraduationCap,
   Check, X,
 }                                             from 'lucide-react-native';
@@ -19,6 +19,7 @@ import Card                                   from '../../src/components/ui/Card
 import Button                                 from '../../src/components/ui/Button';
 import Input                                  from '../../src/components/ui/Input';
 import IconTile                               from '../../src/components/ui/IconTile';
+import BrandMark, { Kicker }                  from '../../src/components/ui/BrandMark';
 import { DURATION }                           from '../../src/lib/motion';
 
 /**
@@ -121,24 +122,25 @@ export default function RegisterScreen() {
         entering={FadeInUp.duration(DURATION.slow)}
         style={{ alignItems: 'flex-start', gap: t.spacing.sm }}
       >
-        <IconTile icon={UserPlus} tone="brand" size="lg" shadow />
-        <View style={{ gap: 4 }}>
+        <BrandMark size={34} />
+        <View style={{ gap: 12, marginTop: t.spacing.md }}>
+          <Kicker dot>New account</Kicker>
           <Text style={{
             fontFamily:    t.fontFamily.displayBold,
-            fontSize:      t.fontSize.xxl,
+            fontSize:      42,
             color:         t.colors.textPrimary,
-            letterSpacing: t.letterSpacing.tight,
-            lineHeight:    t.fontSize.xxl * 1.1,
+            letterSpacing: t.letterSpacing.display,
+            lineHeight:    44,
           }}>
-            Create your account
+            Take your seat.
           </Text>
           <Text style={{
             fontFamily: t.fontFamily.body,
-            fontSize:   t.fontSize.sm,
-            color:      t.colors.textMuted,
-            lineHeight: t.fontSize.sm * 1.5,
+            fontSize:   t.fontSize.md,
+            color:      t.colors.textSecondary,
+            lineHeight: t.fontSize.md * 1.5,
           }}>
-            Join AttendX to track your class attendance.
+            One account to scan in and see where you stand in every class.
           </Text>
         </View>
       </Animated.View>

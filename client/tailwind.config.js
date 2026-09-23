@@ -26,9 +26,9 @@ export default {
         },
       },
       fontFamily: {
-        display: ['"Outfit"', 'sans-serif'],
-        body:    ['"DM Sans"', 'sans-serif'],
-        mono:    ['"JetBrains Mono"', 'monospace'],
+        display: ['"Bricolage Grotesque"', 'sans-serif'],
+        body:    ['"Figtree"', 'sans-serif'],
+        mono:    ['"IBM Plex Mono"', 'monospace'],
       },
       borderRadius: {
         '2xl': '1rem',

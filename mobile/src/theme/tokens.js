@@ -14,6 +14,10 @@ import { Platform } from 'react-native';
  *
  * Two palettes — light and dark — share the same shape so swapping
  * is a one-line operation in ThemeProvider.
+ *
+ * "Roll Call" redesign: cool paper canvas, navy ink, cobalt used
+ * sparingly for the one action a screen exists for, and teal kept
+ * for "present". Values match client/src/App.css one for one.
  * ═════════════════════════════════════════════════════════════════
  */
 
@@ -33,7 +37,7 @@ export const spacing = {
 export const radius = {
   atomic:    10,   // inputs, chips
   molecular: 16,   // cards
-  organism:  22,   // modals, sheets
+  organism:  24,   // modals, sheets, hero panels
   pill:      999,
   none:      0,
 };
@@ -60,14 +64,14 @@ export const fontWeight = {
 
 // PostScript names of the loaded fonts (match expo-font keys)
 export const fontFamily = {
-  display:       'Outfit',
-  displayBold:   'Outfit-Bold',
-  body:          'Inter',
-  bodyMedium:    'Inter-Medium',
-  bodySemibold:  'Inter-SemiBold',
-  bodyBold:      'Inter-Bold',
-  mono:          'JetBrainsMono',
-  monoBold:      'JetBrainsMono-Bold',
+  display:       'Bricolage-SemiBold',
+  displayBold:   'Bricolage-Bold',
+  body:          'Figtree',
+  bodyMedium:    'Figtree-Medium',
+  bodySemibold:  'Figtree-SemiBold',
+  bodyBold:      'Figtree-Bold',
+  mono:          'PlexMono',
+  monoBold:      'PlexMono-SemiBold',
 };
 
 export const lineHeight = {
@@ -79,12 +83,13 @@ export const lineHeight = {
 };
 
 export const letterSpacing = {
-  tight:    -0.4,
+  display:  -1.2,   // big headlines (28px and up)
+  tight:    -0.6,
   snug:     -0.2,
   normal:    0,
   wide:      0.4,
   wider:     0.8,
-  widest:    1.4,
+  widest:    1.2,   // mono kickers
 };
 
 // ─── Shadows — platform-aware ─────────────────────────────────
@@ -102,7 +107,7 @@ export const shadow = {
   }),
   md: Platform.select({
     ios: {
-      shadowColor:   '#000',
+      shadowColor:   '#0B1B3F',
       shadowOffset:  { width: 0, height: 4 },
       shadowOpacity: 0.10,
       shadowRadius:  8,
@@ -130,7 +135,7 @@ export const shadow = {
   // Brand-tinted shadow — for primary buttons and live tiles
   brand: Platform.select({
     ios: {
-      shadowColor:   '#3b82f6',
+      shadowColor:   '#2248FF',
       shadowOffset:  { width: 0, height: 6 },
       shadowOpacity: 0.32,
       shadowRadius:  16,
@@ -141,97 +146,105 @@ export const shadow = {
 
 // ─── Light palette ────────────────────────────────────────────
 const lightColors = {
-  // Surfaces
-  bg:           '#fafafa',
-  bgRaised:     '#f3f4f6',
-  bgCard:       '#ffffff',
-  bgHover:      '#f3f4f6',
-  bgOverlay:    'rgba(15, 23, 42, 0.55)',
-  sidebarBg:    '#f5f5f7',
-  topbarBg:     '#ffffff',
+  // Surfaces — paper on paper, never pure white
+  bg:           '#EEF1F5',
+  bgRaised:     '#E4E8EF',
+  bgCard:       '#F9FAFC',
+  bgHover:      '#E4E8EF',
+  bgOverlay:    'rgba(7, 13, 31, 0.52)',
+  bgInverse:    '#0B1B3F',
+  sidebarBg:    '#EEF1F5',
+  topbarBg:     '#F9FAFC',
 
   // Borders
-  border:       '#e5e7eb',
-  borderHover:  '#d1d5db',
+  border:       'rgba(11, 27, 63, 0.10)',
+  borderHover:  'rgba(11, 27, 63, 0.20)',
 
-  // Text — WCAG ladder
-  textPrimary:    '#0f172a',
-  textSecondary:  '#475569',
-  textMuted:      '#64748b',
-  textInverse:    '#ffffff',
+  // Text — every step measured at 4.5:1 or better on bg
+  textPrimary:    '#0B1B3F',
+  textSecondary:  '#26365A',
+  textMuted:      '#5A6680',
+  textInverse:    '#EEF1F5',
 
-  // Brand (blue)
-  brand:        '#3b82f6',
-  brandText:    '#2563eb',
-  brandSubtle:  'rgba(59, 130, 246, 0.10)',
-  brandBorder:  'rgba(59, 130, 246, 0.28)',
+  // Brand (cobalt)
+  brand:        '#2248FF',
+  brandText:    '#1B3BD9',
+  brandSubtle:  'rgba(34, 72, 255, 0.08)',
+  brandBorder:  'rgba(34, 72, 255, 0.26)',
 
-  // Violet (admin)
-  violet:        '#8b5cf6',
-  violetBg:      'rgba(139, 92, 246, 0.10)',
-  violetBorder:  'rgba(139, 92, 246, 0.28)',
+  // Violet (admin, rare)
+  violet:        '#5B3FD9',
+  violetBg:      'rgba(91, 63, 217, 0.09)',
+  violetBorder:  'rgba(91, 63, 217, 0.26)',
 
-  // Green (success / present)
-  green:        '#10b981',
-  greenBg:      'rgba(16, 185, 129, 0.10)',
-  greenBorder:  'rgba(16, 185, 129, 0.28)',
+  // Teal (present). green = text-safe, greenFill = dots and bars
+  green:        '#08735F',
+  greenFill:    '#14C9A6',
+  greenBg:      'rgba(20, 201, 166, 0.12)',
+  greenBorder:  'rgba(8, 115, 95, 0.28)',
 
-  // Amber (late / warn)
-  amber:        '#f59e0b',
-  amberBg:      'rgba(245, 158, 11, 0.10)',
-  amberBorder:  'rgba(245, 158, 11, 0.28)',
+  // Amber (late)
+  amber:        '#955600',
+  amberFill:    '#F2A93B',
+  amberBg:      'rgba(242, 169, 59, 0.16)',
+  amberBorder:  'rgba(149, 86, 0, 0.28)',
 
-  // Red (error / absent)
-  red:          '#ef4444',
-  redBg:        'rgba(239, 68, 68, 0.10)',
-  redBorder:    'rgba(239, 68, 68, 0.28)',
+  // Red (absent / error)
+  red:          '#C42536',
+  redFill:      '#E5484D',
+  redBg:        'rgba(229, 72, 77, 0.10)',
+  redBorder:    'rgba(196, 37, 54, 0.26)',
 
   // Skeleton shimmer
-  shimmerBase:      '#e5e7eb',
-  shimmerHighlight: '#f3f4f6',
+  shimmerBase:      '#E4E8EF',
+  shimmerHighlight: '#F9FAFC',
 };
 
-// ─── Dark palette ─────────────────────────────────────────────
+// ─── Dark palette — a lecture hall at night, never pure black ──
 const darkColors = {
-  bg:           '#0a0a0b',
-  bgRaised:     '#161618',
-  bgCard:       '#1c1c1f',
-  bgHover:      '#26262a',
-  bgOverlay:    'rgba(0, 0, 0, 0.65)',
-  sidebarBg:    '#0e0e10',
-  topbarBg:     '#0f0f11',
+  bg:           '#070D1F',
+  bgRaised:     '#131E40',
+  bgCard:       '#0C1530',
+  bgHover:      '#16224A',
+  bgOverlay:    'rgba(3, 6, 16, 0.72)',
+  bgInverse:    '#EEF1F7',
+  sidebarBg:    '#070D1F',
+  topbarBg:     '#0A1229',
 
-  border:       '#2a2a2e',
-  borderHover:  '#3a3a3f',
+  border:       'rgba(238, 241, 247, 0.09)',
+  borderHover:  'rgba(238, 241, 247, 0.18)',
 
-  textPrimary:    '#f8fafc',
-  textSecondary:  '#cbd5e1',
-  textMuted:      '#94a3b8',
-  textInverse:    '#0a0a0b',
+  textPrimary:    '#EEF1F7',
+  textSecondary:  'rgba(238, 241, 247, 0.80)',
+  textMuted:      'rgba(238, 241, 247, 0.56)',
+  textInverse:    '#0B1B3F',
 
-  brand:        '#3b82f6',
-  brandText:    '#60a5fa',
-  brandSubtle:  'rgba(59, 130, 246, 0.16)',
-  brandBorder:  'rgba(59, 130, 246, 0.34)',
+  brand:        '#3D5CFF',
+  brandText:    '#9BAEFF',
+  brandSubtle:  'rgba(77, 107, 255, 0.14)',
+  brandBorder:  'rgba(120, 146, 255, 0.34)',
 
-  violet:        '#a78bfa',
-  violetBg:      'rgba(167, 139, 250, 0.14)',
-  violetBorder:  'rgba(167, 139, 250, 0.32)',
+  violet:        '#A994FF',
+  violetBg:      'rgba(169, 148, 255, 0.12)',
+  violetBorder:  'rgba(169, 148, 255, 0.30)',
 
-  green:        '#34d399',
-  greenBg:      'rgba(52, 211, 153, 0.14)',
-  greenBorder:  'rgba(52, 211, 153, 0.32)',
+  green:        '#2BD9B5',
+  greenFill:    '#2BD9B5',
+  greenBg:      'rgba(43, 217, 181, 0.12)',
+  greenBorder:  'rgba(43, 217, 181, 0.30)',
 
-  amber:        '#fbbf24',
-  amberBg:      'rgba(251, 191, 36, 0.14)',
-  amberBorder:  'rgba(251, 191, 36, 0.32)',
+  amber:        '#F5B13D',
+  amberFill:    '#F5B13D',
+  amberBg:      'rgba(245, 177, 61, 0.12)',
+  amberBorder:  'rgba(245, 177, 61, 0.30)',
 
-  red:          '#f87171',
-  redBg:        'rgba(248, 113, 113, 0.14)',
-  redBorder:    'rgba(248, 113, 113, 0.32)',
+  red:          '#FF6B77',
+  redFill:      '#FF6B77',
+  redBg:        'rgba(255, 107, 119, 0.12)',
+  redBorder:    'rgba(255, 107, 119, 0.30)',
 
-  shimmerBase:      '#26262a',
-  shimmerHighlight: '#3a3a3f',
+  shimmerBase:      '#131E40',
+  shimmerHighlight: '#1B2A55',
 };
 
 // ─── Z-index ladder ───────────────────────────────────────────

@@ -1,12 +1,11 @@
-import { useState, useEffect }               from 'react';
+import { useState, useEffect, useMemo }      from 'react';
 import { useParams, useNavigate }            from 'react-router-dom';
 import {
   useQuery, useMutation, useQueryClient,
 }                                            from '@tanstack/react-query';
 import { motion, AnimatePresence }           from 'framer-motion';
 import {
-  Users, StopCircle, RefreshCw, Radio,
-  ArrowLeft, Wifi, WifiOff,
+  StopCircle, RefreshCw, ArrowLeft, Wifi, WifiOff,
 }                                            from 'lucide-react';
 import { formatDistanceToNow }               from 'date-fns';
 import toast                                 from 'react-hot-toast';
@@ -17,11 +16,8 @@ import QRCodeDisplay                         from '../../components/sessions/QRC
 import LiveAttendance                        from '../../components/sessions/LiveAttendanceList';
 
 import PageShell                             from '../../components/layout/PageShell';
-import StatusPill                            from '../../components/ui/StatusPill';
-import { AnimatedList, AnimatedItem }        from '../../components/ui/AnimatedList';
-import {
-  SPRING, TAP, EASE, DURATION,
-}                                            from '../../lib/motion';
+import { useIsMobile }                       from '../../hooks/useIsMobile';
+import { SPRING, TAP }                       from '../../lib/motion';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -42,7 +38,7 @@ export default function LiveSessionPage() {
   const navigate               = useNavigate();
   const qc                     = useQueryClient();
   const { connected, on, off } = useSocket(sessionId);
-  const [attendance, setAttendance] = useState([]);
+  const isMobile               = useIsMobile();
 
   // ── Session data ─────────────────────────────────────────────
   const { data: sessionData, isLoading } = useQuery({
@@ -51,29 +47,29 @@ export default function LiveSessionPage() {
     refetchInterval: 30_000,
   });
 
-  // ── Initial attendance snapshot ──────────────────────────────
-  useQuery({
+  // ── Attendance: server snapshot + live socket arrivals ───────
+  // TanStack Query v5 dropped useQuery's onSuccess, so the snapshot
+  // used to be fetched and then thrown away: after a refresh the
+  // list showed nobody until new scans arrived. Now the snapshot is
+  // read from the query itself and live records are layered on top.
+  const { data: snapshot } = useQuery({
     queryKey: ['attendance', sessionId],
     queryFn:  () => sessionService.getLiveAttendance(sessionId),
-    onSuccess: (data) => setAttendance(data.records ?? []),
   });
+  const [live, setLive] = useState([]);
 
-  // ── WebSocket — live attendance updates ──────────────────────
   useEffect(() => {
     const handler = (record) => {
-      setAttendance(prev => {
-        const idx = prev.findIndex(r => r.studentId === record.studentId);
-        if (idx !== -1) {
-          const updated = [...prev];
-          updated[idx] = { ...record, isNew: true };
-          return updated;
-        }
-        return [{ ...record, isNew: true }, ...prev];
-      });
+      setLive(prev => [{ ...record, isNew: true }, ...prev.filter(r => r.studentId !== record.studentId)]);
     };
     on('attendance:marked', handler);
     return () => off('attendance:marked');
   }, []);   // eslint-disable-line
+
+  const attendance = useMemo(() => {
+    const liveIds = new Set(live.map(r => r.studentId));
+    return [...live, ...(snapshot?.records ?? []).filter(r => !liveIds.has(r.studentId))];
+  }, [live, snapshot]);
 
   // ── Close session ────────────────────────────────────────────
   const closeMut = useMutation({
@@ -119,6 +115,17 @@ export default function LiveSessionPage() {
   };
   const totalEnrolled = session?.enrollmentCount ?? 0;
   const classId       = session?.class?.id ?? session?.class_id;
+  // One seat per enrolled student, filled in the order they scanned
+  const seats = [
+    ...attendance
+      .slice()
+      .sort((a, b) => new Date(a.marked_at ?? 0) - new Date(b.marked_at ?? 0))
+      .map(r => (r.status === 'late' ? 'late' : 'present')),
+    ...Array(Math.max(0, totalEnrolled - attendance.length)).fill('empty'),
+  ];
+  const openedAgo = session?.open_at
+    ? formatDistanceToNow(new Date(session.open_at), { addSuffix: true })
+    : null;
 
   return (
     <PageShell gap="var(--space-4)">
@@ -130,399 +137,210 @@ export default function LiveSessionPage() {
         transition={SPRING.snappy}
         onClick={() => navigate('/lecturer/classes')}
         style={{
-          display:    'flex',
-          alignItems: 'center',
-          gap:        '6px',
-          background: 'none',
-          border:     'none',
-          color:      'var(--text-muted)',
-          fontSize:   'var(--text-sm)',
-          padding:    0,
-          cursor:     'pointer',
-          fontFamily: 'var(--font-body)',
-          alignSelf:  'flex-start',
+          display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+          color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: 0, cursor: 'pointer',
+          fontFamily: 'var(--font-body)', alignSelf: 'flex-start',
         }}
       >
-        <ArrowLeft size={14} />
-        Back to classes
+        <ArrowLeft size={14} /> Back to classes
       </motion.button>
 
-      {/* ── Header card — shared element target ─────────────── */}
-      {/*
-        The layoutId here matches the ClassCard's layoutId so Framer
-        Motion animates the card's position, size, background, and
-        radius INTO this header when the lecturer clicks a live card.
-        This is the demo-day "whoa" moment — make sure classId is
-        populated or the morph won't fire.
-      */}
-      <motion.div
+      {/* ── Header. Shares a layoutId with ClassCard so a live card
+          morphs into this block when the lecturer clicks it. ───── */}
+      <motion.header
         layoutId={classId ? `class-morph-${classId}` : undefined}
         transition={SPRING.gentle}
         style={{
-          background:   'var(--bg-card)',
-          borderRadius: 'var(--radius-molecular)',
-          padding:      'var(--space-4)',
-          boxShadow:    'var(--shadow-brand)',
-          position:     'relative',
-          overflow:     'hidden',
-        }}
-      >
-        {/* Ambient brand glow in the corner to signal this IS live */}
-        <div style={{
-          position:      'absolute',
-          top:           '-60px',
-          right:         '-60px',
-          width:         '180px',
-          height:        '180px',
-          background:    'var(--brand-subtle)',
-          filter:        'blur(50px)',
-          opacity:       0.8,
-          pointerEvents: 'none',
-        }} />
-
-        <div style={{
-          position:       'relative',
           display:        'flex',
           flexWrap:       'wrap',
-          alignItems:     'flex-start',
+          alignItems:     'flex-end',
           justifyContent: 'space-between',
           gap:            'var(--space-3)',
-        }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            {/* Live indicator row */}
-            <div style={{
-              display:      'flex',
-              alignItems:   'center',
-              gap:          'var(--space-2)',
-              marginBottom: '8px',
-              flexWrap:     'wrap',
-            }}>
-              <StatusPill status="live" label="Live session" showSweep={false} />
+        }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <p className="kicker">
+            <span className="live-dot" />
+            Live / {session?.class?.code || session?.class?.name || 'Session'}
+            {openedAgo && <> / opened {openedAgo}</>}
+          </p>
+          <h1 style={{
+            marginTop:     14,
+            fontFamily:    'var(--font-display)',
+            fontSize:      'clamp(32px, 4.2vw, 56px)',
+            fontWeight:    650,
+            color:         'var(--text-primary)',
+            letterSpacing: '-0.036em',
+            lineHeight:    1,
+            textWrap:      'balance',
+          }}>
+            {session?.title || session?.class?.name || 'Session'}
+          </h1>
+        </div>
 
-              <div style={{
-                display:    'flex',
-                alignItems: 'center',
-                gap:        '4px',
-                color:      connected ? 'var(--green)' : 'var(--amber)',
-                fontSize:   'var(--text-xs)',
-                fontWeight: 500,
-              }}>
-                {connected
-                  ? <Wifi     size={12} />
-                  : <WifiOff  size={12} />
-                }
-                {connected ? 'Real-time connected' : 'Connecting…'}
-              </div>
-            </div>
-
-            <h1 style={{
-              fontFamily:    'var(--font-display)',
-              fontSize:      'var(--text-xl)',
-              fontWeight:    700,
-              color:         'var(--text-primary)',
-              letterSpacing: '-0.01em',
-              lineHeight:    1.2,
-              overflow:      'hidden',
-              textOverflow:  'ellipsis',
-              whiteSpace:    'nowrap',
-            }}>
-              {session?.title || session?.class?.name || 'Session'}
-            </h1>
-            <p style={{
-              color:     'var(--text-muted)',
-              fontSize:  'var(--text-sm)',
-              marginTop: '4px',
-            }}>
-              Opened {session?.open_at
-                ? formatDistanceToNow(new Date(session.open_at), { addSuffix: true })
-                : '—'}
-              {' · '}
-              {totalEnrolled} enrolled
-            </p>
-          </div>
-
-          {/* Close session button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="kicker" style={{
+            padding: '8px 12px', borderRadius: 'var(--radius-pill)',
+            background: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)',
+            color: connected ? 'var(--green)' : 'var(--amber)',
+          }}>
+            {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
+            {connected ? 'Real-time on' : 'Connecting'}
+          </span>
           <motion.button
             whileTap={TAP.button}
-            whileHover={{ y: -1 }}
-            transition={SPRING.snappy}
             onClick={() => {
-              if (confirm('Close this session? Students will no longer be able to mark attendance.')) {
+              if (confirm('Close this session? Students will no longer be able to mark attendance, and everyone who did not scan will be marked absent.')) {
                 closeMut.mutate();
               }
             }}
             disabled={closeMut.isPending}
             className="btn-danger"
-            style={{
-              padding: '10px var(--space-3)',
-              opacity: closeMut.isPending ? 0.6 : 1,
-            }}
           >
             <StopCircle size={15} />
             {closeMut.isPending ? 'Closing…' : 'Close session'}
           </motion.button>
         </div>
-      </motion.div>
+      </motion.header>
 
-      {/* ── Live stats ──────────────────────────────────────── */}
-      <AnimatedList
-        style={{
-          display:             'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap:                 'var(--space-3)',
-        }}
-      >
-        <StatCard
-          label="Present"
-          count={counts.present}
-          total={totalEnrolled}
-          color="var(--green)"
-          bg="var(--green-bg)"
-          border="var(--green-border)"
-        />
-        <StatCard
-          label="Late"
-          count={counts.late}
-          total={totalEnrolled}
-          color="var(--amber)"
-          bg="var(--amber-bg)"
-          border="var(--amber-border)"
-        />
-        <StatCard
-          label="Absent"
-          count={counts.absent}
-          total={totalEnrolled}
-          color="var(--red)"
-          bg="var(--red-bg)"
-          border="var(--red-border)"
-        />
-      </AnimatedList>
-
-      {/* ── QR + live attendance row ────────────────────────── */}
+      {/* ── Projector panel + the room ──────────────────────────── */}
       <div style={{
         display:             'grid',
         gap:                 'var(--space-3)',
-        gridTemplateColumns: '1fr',
-      }}
-      className="lg:grid-cols-[auto_1fr]">
+        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.05fr) minmax(0, 1fr)',
+        alignItems:          'start',
+      }}>
 
-        {/* QR panel */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
+        {/* QR panel: the thing on the projector */}
+        <motion.section
+          aria-label="QR code for students"
+          initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ ...SPRING.gentle, delay: 0.1 }}
+          transition={{ ...SPRING.gentle, delay: 0.08 }}
           style={{
-            background:     'var(--bg-card)',
-            borderRadius:   'var(--radius-molecular)',
-            padding:        'var(--space-5) var(--space-4)',
-            display:        'flex',
-            flexDirection:  'column',
-            alignItems:     'center',
-            boxShadow:      'var(--shadow-md)',
-            position:       'relative',
-            overflow:       'hidden',
+            background:    'var(--bg-card)',
+            borderRadius:  'var(--radius-organism)',
+            padding:       'clamp(24px, 3vw, 44px) var(--space-4)',
+            display:       'flex',
+            flexDirection: 'column',
+            alignItems:    'center',
+            boxShadow:     'var(--shadow-md)',
+            position:      isMobile ? 'relative' : 'sticky',
+            top:           92,
           }}
         >
-          <div style={{
-            display:      'flex',
-            alignItems:   'center',
-            gap:          '6px',
-            marginBottom: 'var(--space-3)',
-          }}>
-            <Radio size={13} style={{ color: 'var(--brand-text)' }} />
-            <p style={{
-              color:          'var(--brand-text)',
-              fontSize:       'var(--text-xs)',
-              fontWeight:     700,
-              textTransform:  'uppercase',
-              letterSpacing:  '0.1em',
-            }}>
-              Display to students
-            </p>
-          </div>
+          <p className="kicker" style={{ marginBottom: 'var(--space-4)' }}>
+            <span className="dot" /> Show this to the class
+          </p>
 
           <QRCodeDisplay
             sessionId={sessionId}
             qrInterval={session?.qr_interval ?? 5}
+            size={isMobile ? 220 : 300}
           />
 
           <p style={{
-            color:      'var(--text-muted)',
-            fontSize:   'var(--text-xs)',
-            marginTop:  'var(--space-3)',
-            textAlign:  'center',
-            maxWidth:   '280px',
-            lineHeight: 1.5,
+            color: 'var(--text-subtle)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-3)',
+            textAlign: 'center', maxWidth: '36ch', lineHeight: 1.55,
           }}>
-            Students scan this code from the AttendX app to mark their attendance. The code rotates every {session?.qr_interval ?? 5} seconds for security.
+            Students scan from their seat. The code changes every {session?.qr_interval ?? 5} seconds, so a forwarded photo stops working almost at once.
           </p>
-        </motion.div>
+        </motion.section>
 
-        {/* Attendance list */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...SPRING.gentle, delay: 0.15 }}
-          style={{
-            background:    'var(--bg-card)',
-            borderRadius:  'var(--radius-molecular)',
-            overflow:      'hidden',
-            display:       'flex',
-            flexDirection: 'column',
-            boxShadow:     'var(--shadow-md)',
-            minHeight:     '400px',
-          }}
-        >
-          <div style={{
-            display:      'flex',
-            alignItems:   'center',
-            gap:          'var(--space-2)',
-            padding:      'var(--space-3)',
-            borderBottom: '1px solid var(--border)',
-            background:   'var(--bg-raised)',
-          }}>
-            <Users size={14} style={{ color: 'var(--text-muted)' }} />
-            <p style={{
-              fontWeight: 600,
-              color:      'var(--text-primary)',
-              fontSize:   'var(--text-sm)',
-              fontFamily: 'var(--font-display)',
-            }}>
-              Live attendance
-            </p>
-
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={attendance.length}
-                initial={{ opacity: 0, scale: 0.6, y: -4 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{    opacity: 0, scale: 0.6, y: 4 }}
-                transition={SPRING.bounce}
-                style={{
-                  marginLeft:    'auto',
-                  color:         'var(--brand-text)',
-                  fontSize:      'var(--text-xs)',
-                  fontFamily:    'var(--font-mono)',
-                  fontWeight:    600,
-                  background:    'var(--brand-subtle)',
-                  border:        '1px solid var(--brand-border)',
-                  padding:       '2px 10px',
-                  borderRadius:  'var(--radius-pill)',
-                }}
-              >
-                {attendance.length}/{totalEnrolled || '?'}
-              </motion.span>
-            </AnimatePresence>
+        {/* The room */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', minWidth: 0 }}>
+          <div style={{ display: 'grid', gap: 'var(--space-2)', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            <LiveCount label="Present"  count={counts.present} total={totalEnrolled} tone="var(--green-fill)" />
+            <LiveCount label="Late"     count={counts.late}    total={totalEnrolled} tone="var(--amber-fill)" />
+            <LiveCount label="Not yet"  count={counts.absent}  total={totalEnrolled} tone="var(--text-muted)" />
           </div>
 
-          <LiveAttendance records={attendance} />
-        </motion.div>
+          {totalEnrolled > 0 && (
+            <div style={{
+              background: 'var(--bg-card)', borderRadius: 'var(--radius-molecular)',
+              padding: 'var(--space-3)', boxShadow: 'var(--shadow-md)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, gap: 12 }}>
+                <p className="kicker">The room / one seat per student</p>
+                <p className="kicker num" style={{ color: 'var(--text-primary)' }}>
+                  {attendance.length} / {totalEnrolled}
+                </p>
+              </div>
+              <div className="seats" aria-hidden="true" style={{ gap: 5 }}>
+                {seats.map((st, i) => (
+                  <motion.span
+                    key={i}
+                    className={`seat${st === 'present' ? ' is-present' : st === 'late' ? ' is-late' : ''}`}
+                    initial={st !== 'empty' ? { scale: 0.4 } : false}
+                    animate={{ scale: 1 }}
+                    transition={SPRING.bounce}
+                    style={{ width: 11, height: 11 }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 'var(--radius-molecular)',
+            overflow: 'hidden', display: 'flex', flexDirection: 'column',
+            boxShadow: 'var(--shadow-md)', minHeight: 360,
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              padding: 'var(--space-3)', borderBottom: '1px solid var(--border)',
+            }}>
+              <p style={{ fontWeight: 650, color: 'var(--text-primary)', fontSize: 'var(--text-md)', fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}>
+                Arrivals
+              </p>
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={attendance.length}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={SPRING.snappy}
+                  className="kicker"
+                >
+                  {attendance.length} scanned
+                </motion.span>
+              </AnimatePresence>
+            </div>
+            <LiveAttendance records={attendance} />
+          </div>
+        </div>
       </div>
     </PageShell>
   );
 }
 
-// ─── Stat card with live count + progress bar ──────────────────
-function StatCard({ label, count, total, color, bg, border }) {
-  const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
-
+// ─── Live count tile ───────────────────────────────────────────
+function LiveCount({ label, count, total, tone }) {
   return (
-    <AnimatedItem
-      whileHover={{ y: -3 }}
-      transition={SPRING.snappy}
-    >
-      <div style={{
-        position:     'relative',
-        background:   'var(--bg-card)',
-        borderRadius: 'var(--radius-molecular)',
-        padding:      'var(--space-3)',
-        boxShadow:    'var(--shadow-md)',
-        overflow:     'hidden',
-        height:       '100%',
-      }}>
-        {/* Ambient glow */}
-        <div style={{
-          position:      'absolute',
-          top:           '-40px',
-          right:         '-40px',
-          width:         '120px',
-          height:        '120px',
-          background:    bg,
-          filter:        'blur(40px)',
-          opacity:       0.7,
-          pointerEvents: 'none',
-        }} />
-
-        {/* Count — animates on change for real-time feedback */}
-        <div style={{
-          position:   'relative',
-          display:    'flex',
-          alignItems: 'baseline',
-          gap:        '6px',
-          marginBottom: '6px',
-        }}>
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={count}
-              initial={{ opacity: 0, y: 8, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{    opacity: 0, y: -8, scale: 0.9 }}
-              transition={SPRING.bounce}
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize:   'var(--text-2xl)',
-                fontWeight: 700,
-                color,
-                lineHeight: 1,
-              }}
-            >
-              {count}
-            </motion.p>
-          </AnimatePresence>
-          {total > 0 && (
-            <span style={{
-              color:      'var(--text-muted)',
-              fontSize:   'var(--text-sm)',
-              fontWeight: 500,
-              fontFamily: 'var(--font-mono)',
-            }}>
-              /{total}
-            </span>
-          )}
-        </div>
-
-        <p style={{
-          position:     'relative',
-          color:        'var(--text-muted)',
-          fontSize:     'var(--text-sm)',
-          marginBottom: 'var(--space-2)',
-        }}>
-          {label}
-        </p>
-
-        {/* Progress bar — animates width change */}
-        {total > 0 && (
-          <div style={{
-            position:     'relative',
-            width:        '100%',
-            height:       '4px',
-            background:   'var(--bg-raised)',
-            borderRadius: 'var(--radius-pill)',
-            overflow:     'hidden',
-          }}>
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${percentage}%` }}
-              transition={{ duration: 0.6, ease: EASE.entry }}
-              style={{
-                height:       '100%',
-                background:   color,
-                borderRadius: 'var(--radius-pill)',
-              }}
-            />
-          </div>
-        )}
+    <div style={{
+      background: 'var(--bg-card)', borderRadius: 'var(--radius-molecular)',
+      padding: '16px', boxShadow: 'var(--shadow-md)', minWidth: 0,
+    }}>
+      <p className="kicker"><span className="dot" style={{ background: tone }} />{label}</p>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 12 }}>
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={count}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={SPRING.bounce}
+            className="num"
+            style={{
+              fontFamily: 'var(--font-display)', fontWeight: 650, fontSize: 'clamp(30px, 3.4vw, 46px)',
+              letterSpacing: '-0.045em', lineHeight: 0.9, color: 'var(--text-primary)',
+            }}
+          >
+            {count}
+          </motion.span>
+        </AnimatePresence>
+        {total > 0 && <span className="num" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>/{total}</span>}
       </div>
-    </AnimatedItem>
+    </div>
   );
 }

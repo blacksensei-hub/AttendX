@@ -6,7 +6,7 @@ import { zodResolver }                       from '@hookform/resolvers/zod';
 import { z }                                 from 'zod';
 import { motion, AnimatePresence }           from 'framer-motion';
 import {
-  Eye, EyeOff, LogIn, Mail, Lock, ArrowRight,
+  Eye, EyeOff, Mail, Lock, ArrowRight,
 }                                            from 'lucide-react';
 import toast                                 from 'react-hot-toast';
 
@@ -74,19 +74,18 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1, ...SPRING.gentle }}
-        style={{ marginBottom: 'var(--space-4)' }}
+        style={{ marginBottom: 'var(--space-5)' }}
       >
+        <p className="kicker"><span className="dot" /> Sign in</p>
         <h1 style={{
-          fontFamily: 'var(--font-display)', fontSize: 'var(--text-2xl)',
-          fontWeight: 700, color: 'var(--text-primary)',
-          letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '6px',
+          fontFamily: 'var(--font-display)', fontSize: 'clamp(40px, 5vw, 56px)',
+          fontWeight: 650, color: 'var(--text-primary)',
+          letterSpacing: '-0.036em', lineHeight: 1, margin: '16px 0 12px',
         }}>
-          Welcome back
+          Welcome back.
         </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)', lineHeight: 1.5 }}>
-          Sign in to{' '}
-          <span className="gradient-text" style={{ fontWeight: 600 }}>AttendX</span>
-          {' '}to manage your classes and attendance.
+        <p style={{ color: 'var(--text-subtle)', fontSize: 'var(--text-base)', lineHeight: 1.55 }}>
+          Open today's session, or mark your seat in the one that's running.
         </p>
       </motion.div>
 
@@ -105,7 +104,7 @@ export default function LoginPage() {
             className="input-base"
             autoComplete="email"
             style={{
-              paddingLeft: '36px',
+              paddingLeft: '40px', height: '50px',
               borderColor: errors.email ? 'var(--red-border)' : undefined,
             }}
           />
@@ -154,7 +153,7 @@ export default function LoginPage() {
             className="input-base"
             autoComplete="current-password"
             style={{
-              paddingLeft:   '36px',
+              paddingLeft:   '40px', height: '50px',
               borderColor:   errors.password ? 'var(--red-border)' : undefined,
               fontFamily:    showPw ? 'var(--font-mono)' : 'var(--font-body)',
               letterSpacing: showPw ? '0.04em' : 'normal',
@@ -169,8 +168,8 @@ export default function LoginPage() {
           transition={SPRING.snappy}
           type="submit"
           disabled={isSubmitting}
-          className="btn-primary"
-          style={{ height: '48px', marginTop: '8px', fontSize: 'var(--text-sm)', opacity: isSubmitting ? 0.7 : 1 }}
+          className="btn-accent"
+          style={{ height: '52px', marginTop: '12px', fontSize: 'var(--text-base)', opacity: isSubmitting ? 0.7 : 1 }}
         >
           {isSubmitting ? (
             <>
@@ -185,13 +184,13 @@ export default function LoginPage() {
               Signing in…
             </>
           ) : (
-            <><LogIn size={15} /> Sign in <ArrowRight size={14} /></>
+            <>Sign in <ArrowRight size={16} /></>
           )}
         </motion.button>
       </form>
 
       {/* Register link */}
-      <p style={{ marginTop: 'var(--space-3)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+      <p style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--border)', color: 'var(--text-subtle)', fontSize: 'var(--text-sm)' }}>
         New to AttendX?{' '}
         <Link
           to="/register"
@@ -211,7 +210,7 @@ function Field({ label, icon: Icon, action, error, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <label style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+        <label className="label" style={{ marginBottom: 0 }}>
           {label}
         </label>
         {action}
@@ -219,7 +218,7 @@ function Field({ label, icon: Icon, action, error, children }) {
       <div style={{ position: 'relative' }}>
         {Icon && (
           <Icon size={14} style={{
-            position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+            position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)',
             color: error ? 'var(--red)' : 'var(--text-muted)',
             pointerEvents: 'none', transition: `color ${DURATION.base}ms ${EASE.state}`,
           }} />
@@ -232,7 +231,7 @@ function Field({ label, icon: Icon, action, error, children }) {
             key="error"
             initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
             transition={{ duration: DURATION.fast, ease: EASE.state }}
-            style={{ color: 'var(--red)', fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 500 }}
+            style={{ color: 'var(--red)', fontSize: 'var(--text-xs)', fontWeight: 500 }}
           >
             {error}
           </motion.p>

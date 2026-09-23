@@ -82,7 +82,7 @@ export default function AdminAuditPage() {
   };
 
   return (
-    <div style={{ padding: isMobile ? 'var(--space-3)' : 'var(--space-6)', maxWidth: 1100, margin: '0 auto', fontFamily: 'var(--font-display)' }}>
+    <div style={{ padding: 0, maxWidth: 1360, margin: '0 auto', fontFamily: 'var(--font-body)' }}>
 
       {/* Header */}
       <header style={{ marginBottom: 'var(--space-5)' }}>
@@ -91,7 +91,7 @@ export default function AdminAuditPage() {
             <Shield size={18} color="var(--violet)" />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: isMobile ? 'var(--text-xl)' : 'clamp(20px,2.5vw,28px)', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
               Audit Log
             </h1>
             <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>

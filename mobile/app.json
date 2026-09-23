@@ -4,9 +4,9 @@
     "slug": "attendx",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "scheme": "attendx",
-    "icon": "./assets/logo-full.png",
+    "icon": "./assets/icon.png",
     "plugins": [
       "expo-router",
       "expo-camera",
@@ -22,7 +22,8 @@
     "android": {
       "package": "com.attendx.app",
       "adaptiveIcon": {
-        "backgroundColor": "#0a0a14"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1B3F"
       }
     },
     "ios": {

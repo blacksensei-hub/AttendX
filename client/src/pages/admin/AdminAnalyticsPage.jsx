@@ -41,7 +41,7 @@ export default function AdminAnalyticsPage() {
   const xAxisInterval = isMobile ? Math.floor(sessionsOverTime.length / 4) : days <= 7 ? 0 : 2;
 
   return (
-    <div style={{ padding: isMobile ? 'var(--space-3)' : 'var(--space-6)', maxWidth: 1100, margin: '0 auto', fontFamily: 'var(--font-display)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <div style={{ padding: 0, maxWidth: 1360, margin: '0 auto', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -50,7 +50,7 @@ export default function AdminAnalyticsPage() {
             <BarChart3 size={18} color="var(--brand-text)" />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: isMobile ? 'var(--text-xl)' : 'clamp(20px,2.5vw,28px)', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
               Analytics
             </h1>
             <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>

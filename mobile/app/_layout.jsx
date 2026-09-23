@@ -4,6 +4,16 @@ import { StatusBar }                          from 'expo-status-bar';
 import { useEffect }                          from 'react';
 import { View }                               from 'react-native';
 import { GestureHandlerRootView }             from 'react-native-gesture-handler';
+// Per-weight subpath imports: the package roots require every weight
+// (60+ font files), which would all ship inside the app.
+import { BricolageGrotesque_600SemiBold } from '@expo-google-fonts/bricolage-grotesque/600SemiBold';
+import { BricolageGrotesque_700Bold }     from '@expo-google-fonts/bricolage-grotesque/700Bold';
+import { Figtree_400Regular }             from '@expo-google-fonts/figtree/400Regular';
+import { Figtree_500Medium }              from '@expo-google-fonts/figtree/500Medium';
+import { Figtree_600SemiBold }            from '@expo-google-fonts/figtree/600SemiBold';
+import { Figtree_700Bold }                from '@expo-google-fonts/figtree/700Bold';
+import { IBMPlexMono_400Regular }         from '@expo-google-fonts/ibm-plex-mono/400Regular';
+import { IBMPlexMono_600SemiBold }        from '@expo-google-fonts/ibm-plex-mono/600SemiBold';
 
 import {
   ThemeProvider, useTheme, useThemeMode,
@@ -40,15 +50,17 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 export default function RootLayout() {
+  // Roll Call type: Bricolage Grotesque (display), Figtree (body),
+  // IBM Plex Mono (labels). Keys match fontFamily in theme/tokens.js.
   const [fontsLoaded, fontError] = useFonts({
-    'Outfit':              require('../assets/fonts/Outfit-Regular.ttf'),
-    'Outfit-Bold':         require('../assets/fonts/Outfit-Bold.ttf'),
-    'Inter':               require('../assets/fonts/Inter-Regular.ttf'),
-    'Inter-Medium':        require('../assets/fonts/Inter-Medium.ttf'),
-    'Inter-SemiBold':      require('../assets/fonts/Inter-SemiBold.ttf'),
-    'Inter-Bold':          require('../assets/fonts/Inter-Bold.ttf'),
-    'JetBrainsMono':       require('../assets/fonts/JetBrainsMono-Regular.ttf'),
-    'JetBrainsMono-Bold':  require('../assets/fonts/JetBrainsMono-Bold.ttf'),
+    'Bricolage-SemiBold':  BricolageGrotesque_600SemiBold,
+    'Bricolage-Bold':      BricolageGrotesque_700Bold,
+    'Figtree':             Figtree_400Regular,
+    'Figtree-Medium':      Figtree_500Medium,
+    'Figtree-SemiBold':    Figtree_600SemiBold,
+    'Figtree-Bold':        Figtree_700Bold,
+    'PlexMono':            IBMPlexMono_400Regular,
+    'PlexMono-SemiBold':   IBMPlexMono_600SemiBold,
   });
 
   // Hide the splash once fonts are ready (or failed) — don't hang forever

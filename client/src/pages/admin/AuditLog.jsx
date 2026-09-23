@@ -58,11 +58,11 @@ export default function AuditLogPage() {
     : logs;
 
   return (
-    <div style={{ padding: isMobile ? 'var(--space-3)' : 'var(--space-6)', maxWidth: 1100, margin: '0 auto', fontFamily: 'var(--font-display)' }}>
+    <div style={{ padding: 0, maxWidth: 1360, margin: '0 auto', fontFamily: 'var(--font-body)' }}>
 
       {/* Header */}
       <header style={{ marginBottom: 'var(--space-4)' }}>
-        <h1 style={{ margin: 0, fontSize: isMobile ? 'var(--text-xl)' : 'clamp(20px,2.5vw,28px)', fontWeight: 700, color: 'var(--text-primary)' }}>
+        <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
           Audit log
         </h1>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>

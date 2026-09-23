@@ -41,18 +41,19 @@ export default function StudentLayout() {
             backgroundColor:  t.colors.topbarBg,
             borderTopColor:   t.colors.border,
             borderTopWidth:   1,
-            height:           64,
+            height:           68,
             paddingTop:       6,
             paddingBottom:    8,
             elevation:        0,
           },
-          tabBarActiveTintColor:   t.colors.brand,
+          tabBarActiveTintColor:   t.colors.textPrimary,
           tabBarInactiveTintColor: t.colors.textMuted,
           tabBarLabelStyle: {
-            fontSize:      10,
-            fontFamily:    t.fontFamily.bodySemibold,
-            letterSpacing: 0.2,
-            marginTop:     2,
+            fontSize:      9.5,
+            fontFamily:    t.fontFamily.mono,
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+            marginTop:     3,
           },
           tabBarItemStyle: {
             paddingTop: 4,
@@ -139,9 +140,9 @@ function TabIcon({ Icon, color, focused, t }) {
       alignItems:     'center',
       justifyContent: 'center',
       borderRadius:   t.radius.pill,
-      backgroundColor: focused ? t.colors.brandSubtle : 'transparent',
+      backgroundColor: focused ? t.colors.bgInverse : 'transparent',
     }}>
-      <Icon size={20} color={color} strokeWidth={2.2} />
+      <Icon size={19} color={focused ? t.colors.textInverse : color} strokeWidth={2.2} />
     </View>
   );
 }

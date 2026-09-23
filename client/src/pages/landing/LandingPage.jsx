@@ -5,6 +5,7 @@ import { QRCodeSVG }                                from 'qrcode.react';
 import { ArrowRight, ArrowUpRight }                 from 'lucide-react';
 
 import BrandMark                                    from '../../components/ui/BrandMark';
+import { useScrolledPast }                          from '../../hooks/useScrolledPast';
 import { mountScrubHero }                           from './scrubHero';
 import { mountAnchorScroll, compactNavClearance }   from './anchorScroll';
 import './landing.css';
@@ -93,7 +94,7 @@ export default function LandingPage() {
   const rootRef           = useRef(null);
   const heroRef           = useRef(null);
   const [onHero, setOnHero] = useState(true);
-  const [compact, setCompact] = useState(() => window.scrollY > 24);
+  const compact           = useScrolledPast(24);   // nav becomes a floating pill
 
   useEffect(() => mountScrubHero(heroRef.current), []);
   useEffect(() => mountAnchorScroll(rootRef.current), []);
@@ -109,13 +110,6 @@ export default function LandingPage() {
     );
     io.observe(heroRef.current);
     return () => io.disconnect();
-  }, []);
-
-  // Nav becomes a floating pill as soon as the page scrolls
-  useEffect(() => {
-    const onScroll = () => setCompact(window.scrollY > 24);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   // Pause CSS loops on hidden tabs

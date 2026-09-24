@@ -25,7 +25,8 @@
             "enableSceneSupport": true
           }
         }
-      ]
+      ],
+      "./plugins/withXcodeEnvLocal"
     ],
     "android": {
       "package": "com.attendx.app",

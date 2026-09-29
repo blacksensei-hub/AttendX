@@ -3,6 +3,7 @@ const { Enrollment, Attendance, User } = require('../models');
 const { sendSessionClosedEmails }      = require('./emailService');
 const { opsEmit }                      = require('./opsFeed');
 const { sweepSession }                 = require('./fraudService');
+const { excusedFor }                   = require('./excuseService');
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -39,11 +40,14 @@ async function backfillAbsences(session) {
 
   if (absentees.length === 0) return 0;
 
+  // A student with an approved excused-absence request covering today
+  // is recorded as excused, not absent.
+  const excused = await excusedFor(session);
   await Attendance.bulkCreate(
     absentees.map(studentId => ({
       session_id: session.id,
       student_id: studentId,
-      status:     'absent',
+      status:     excused.has(studentId) ? 'excused' : 'absent',
       marked_at:  session.closed_at ?? new Date(),
     })),
     { ignoreDuplicates: true },

@@ -1,3 +1,4 @@
+import { useState }                                  from 'react';
 import { useQuery, useMutation, useQueryClient }     from '@tanstack/react-query';
 import { useNavigate }                               from 'react-router-dom';
 import { motion, AnimatePresence }                   from 'framer-motion';
@@ -10,6 +11,7 @@ import toast                                         from 'react-hot-toast';
 import api                                           from '../../services/api';
 import PageShell, { PageHeader }                     from '../../components/layout/PageShell';
 import StatusPill                                    from '../../components/ui/StatusPill';
+import { ConfirmDialog }                             from '../../components/console/overlays';
 import { AnimatedList, AnimatedItem }                from '../../components/ui/AnimatedList';
 import {
   SPRING, TAP, EASE, DURATION,
@@ -39,12 +41,14 @@ export default function LiveSessionsPage() {
     refetchOnMount:  true,
   });
   const sessions = data?.sessions ?? [];
+  const [closing, setClosing] = useState(null);
 
   // ── Close session ────────────────────────────────────────────
   const closeMut = useMutation({
     mutationFn: (sessionId) => api.put(`/sessions/${sessionId}/close`),
     onSuccess:  () => {
       toast.success('Session closed');
+      setClosing(null);
       refetch();
       qc.invalidateQueries({ queryKey: ['classes'] });
     },
@@ -56,7 +60,7 @@ export default function LiveSessionsPage() {
   if (isLoading) {
     return (
       <PageShell>
-        <PageHeader title="Live Sessions" subtitle="Loading…" />
+        <PageHeader kicker="Lecturer / Live" title="Live" accent="now." subtitle="Loading…" />
         <div style={{
           display:       'flex',
           flexDirection: 'column',
@@ -82,7 +86,9 @@ export default function LiveSessionsPage() {
 
       {/* ── Header ──────────────────────────────────────────── */}
       <PageHeader
-        title="Live Sessions"
+        kicker="Lecturer / Live"
+        title="Live"
+        accent="now."
         subtitle={
           sessions.length === 0
             ? 'No sessions running right now'
@@ -203,11 +209,7 @@ export default function LiveSessionsPage() {
                   <SessionCard
                     session={session}
                     onView={() => navigate(`/lecturer/session/${session.id}`)}
-                    onClose={() => {
-                      if (confirm('Close this session? Students will no longer be able to mark attendance.')) {
-                        closeMut.mutate(session.id);
-                      }
-                    }}
+                    onClose={() => setClosing(session)}
                     closing={closeMut.isPending}
                   />
                 </AnimatedItem>
@@ -216,6 +218,19 @@ export default function LiveSessionsPage() {
           </AnimatedList>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={Boolean(closing)}
+        onClose={() => setClosing(null)}
+        busy={closeMut.isPending}
+        danger
+        title={`Close ${closing?.className ?? 'this session'}?`}
+        confirmLabel="Close session"
+        onConfirm={() => closeMut.mutate(closing.id)}
+      >
+        Students can no longer scan in. Everyone who hasn't scanned is marked absent, or excused if an excused
+        absence covering today was approved.
+      </ConfirmDialog>
     </PageShell>
   );
 }

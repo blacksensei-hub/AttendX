@@ -5,10 +5,13 @@ import { X, AlertTriangle }  from 'lucide-react';
 import api                   from '../../services/api';
 import toast                 from 'react-hot-toast';
 
+// Excused counts towards the minimum without being a scan (a doctor's
+// note shown in person, university business).
 const STATUS_OPTIONS = [
-  { value: 'present', label: 'Present', color: '#10b981', bg: 'rgba(16,185,129,0.1)'  },
-  { value: 'late',    label: 'Late',    color: '#f59e0b', bg: 'rgba(245,158,11,0.1)'  },
-  { value: 'absent',  label: 'Absent',  color: '#ef4444', bg: 'rgba(239,68,68,0.1)'   },
+  { value: 'present', label: 'Present', color: 'var(--green)',  bg: 'var(--green-bg)'  },
+  { value: 'late',    label: 'Late',    color: 'var(--amber)',  bg: 'var(--amber-bg)'  },
+  { value: 'excused', label: 'Excused', color: 'var(--violet)', bg: 'var(--violet-bg)' },
+  { value: 'absent',  label: 'Absent',  color: 'var(--red)',    bg: 'var(--red-bg)'    },
 ];
 
 // Props:

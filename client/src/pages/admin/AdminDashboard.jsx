@@ -10,6 +10,7 @@ import { ConsoleHead, Panel, Kpi, Sig, Empty, PanelSkeleton } from '../../compon
 import { TrendLine } from '../../components/console/charts';
 import AuditLine from '../../components/console/AuditLine';
 import { pctFormat, timeAgo, usePanelReveal } from '../../components/console/format';
+import { shortName, withStop } from '../../lib/names';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -48,7 +49,7 @@ export default function AdminDashboard() {
     <div className="c-page">
       <ConsoleHead
         kicker={`Admin / ${data?.range?.label ?? 'Overview'}`}
-        title={`${greeting()}, ${user?.name?.split(' ')[0] ?? 'admin'}.`}
+        title={withStop(`${greeting()}, ${shortName(user?.name) || 'admin'}`)}
         lede="Where the institution stands this semester, and what needs you next."
         actions={<Link to="/admin/ops" className="btn-ghost btn-sm"><MonitorPlay size={15} /> Ops wall</Link>}
       />

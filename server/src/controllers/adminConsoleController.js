@@ -25,6 +25,8 @@ const { success, error } = require('../utils/apiResponse');
 const MIGRATION_TABLES = [
   'audit_events', 'institution_settings', 'semesters', 'calendar_events',
   'scan_attempts', 'fraud_flags', 'announcements', 'announcement_receipts',
+  // server/sql/2026-09-29_teaching_tools.sql
+  'class_staff', 'excuse_requests', 'user_preferences',
 ];
 
 const safe = (p, fallback) => p.catch(() => fallback);

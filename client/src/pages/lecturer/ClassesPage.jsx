@@ -41,6 +41,7 @@ export default function ClassesPage() {
     queryFn:  classService.getMyClasses,
   });
   const classes = classData?.classes ?? [];
+  const shared  = classes.filter(c => c.myRole && c.myRole !== 'owner').length;
 
   const deleteMut = useMutation({
     mutationFn: classService.deleteClass,
@@ -56,10 +57,7 @@ export default function ClassesPage() {
   if (isLoading) {
     return (
       <PageShell>
-        <PageHeader
-          title="Your Classes"
-          subtitle="Loading…"
-        />
+        <PageHeader kicker="Lecturer / Classes" title="Your" accent="classes." subtitle="Loading your classes…" />
         <div style={{
           display:             'grid',
           gap:                 'var(--space-3)',
@@ -85,11 +83,13 @@ export default function ClassesPage() {
 
       {/* ── Header ──────────────────────────────────────────── */}
       <PageHeader
-        title="Your Classes"
+        kicker="Lecturer / Classes"
+        title="Your"
+        accent="classes."
         subtitle={
           classes.length === 0
-            ? 'Get started by creating your first class'
-            : `${classes.length} class${classes.length !== 1 ? 'es' : ''} · click any card to manage sessions`
+            ? 'Create your first class to start taking attendance.'
+            : `${classes.length} class${classes.length !== 1 ? 'es' : ''}${shared ? `, ${shared} shared with you` : ''}. Open one for its register, students, staff and grades.`
         }
         action={
           <motion.button

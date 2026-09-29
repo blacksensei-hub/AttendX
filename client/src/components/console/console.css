@@ -8,8 +8,12 @@
    ═══════════════════════════════════════════════════════════════ */
 
 /* .console-portal: drawers, dialogs and the palette render in a portal
-   outside .console, so they opt in to the same tokens. */
-.console, .console-portal {
+   outside .console, so they opt in to the same tokens.
+   The building blocks (panels, tables, tabs, drawers) are shared with
+   the lecturer and student pages, so the base tokens live on :root;
+   only the dark control-room palette is console-only. Overlays opened
+   outside the console use .app-portal. */
+:root, .console, .console-portal {
   --panel-tick:  rgba(34, 72, 255, 0.40);
   --panel-radius: var(--radius-molecular);
   --grid-line:   rgba(11, 27, 63, 0.045);
@@ -33,7 +37,7 @@
   --grid-line:     rgba(155, 174, 255, 0.045);
 }
 
-.console-portal { color: var(--text-primary); }
+.console-portal, .app-portal { color: var(--text-primary); }
 
 /* Faint drafting grid under the canvas, fading out down the page. */
 .console-grid {

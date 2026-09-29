@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient }     from '@tanstack/react-query
 import { motion, AnimatePresence }                   from 'framer-motion';
 import {
   Bell, X, CheckCheck, Trash2,
-  Radio, CheckCircle, Clock, Megaphone, TriangleAlert, ShieldAlert,
+  Radio, CheckCircle, Clock, Megaphone, TriangleAlert, ShieldAlert, CalendarX2, CalendarClock, Users,
 }                                                    from 'lucide-react';
 import { formatDistanceToNow }                       from 'date-fns';
 
@@ -69,6 +69,32 @@ const TYPE_META = {
     color:  'var(--red)',
     bg:     'var(--red-bg)',
     border: 'var(--red-border)',
+  },
+  // A student asked for an absence to be excused / the lecturer decided
+  excuse_request: {
+    icon:   CalendarX2,
+    color:  'var(--violet)',
+    bg:     'var(--violet-bg)',
+    border: 'var(--violet-border)',
+  },
+  excuse_reviewed: {
+    icon:   CalendarX2,
+    color:  'var(--violet)',
+    bg:     'var(--violet-bg)',
+    border: 'var(--violet-border)',
+  },
+  class_reminder: {
+    icon:   CalendarClock,
+    color:  'var(--brand-text)',
+    bg:     'var(--brand-subtle)',
+    border: 'var(--brand-border)',
+  },
+  // Added to a class as a co-lecturer or teaching assistant
+  staff_added: {
+    icon:   Users,
+    color:  'var(--brand-text)',
+    bg:     'var(--brand-subtle)',
+    border: 'var(--brand-border)',
   },
   default: {
     icon:   Bell,

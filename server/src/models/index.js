@@ -17,6 +17,7 @@ const {
   AuditEvent, InstitutionSetting, Semester, CalendarEvent,
   ScanAttempt, FraudFlag, Announcement, AnnouncementReceipt,
 }                          = require('./AdminConsole');
+const { ClassStaff, ExcuseRequest, UserPreference } = require('./Teaching');
 
 // ─── Associations ─────────────────────────────────────────────
 
@@ -124,6 +125,14 @@ Announcement.belongsTo(User, { foreignKey: 'created_by',  as: 'author' });
 Announcement.hasMany(AnnouncementReceipt, { foreignKey: 'announcement_id', as: 'receipts' });
 AnnouncementReceipt.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+// ── Lecturer and student tools ────────────────────────────────
+Class.hasMany(ClassStaff,   { foreignKey: 'class_id', as: 'staff' });
+ClassStaff.belongsTo(Class, { foreignKey: 'class_id', as: 'class' });
+ClassStaff.belongsTo(User,  { foreignKey: 'user_id',  as: 'user' });
+ExcuseRequest.belongsTo(User,  { foreignKey: 'student_id',  as: 'student' });
+ExcuseRequest.belongsTo(User,  { foreignKey: 'reviewed_by', as: 'reviewer' });
+ExcuseRequest.belongsTo(Class, { foreignKey: 'class_id',    as: 'class' });
+
 module.exports = {
   sequelize, Sequelize,
   User,
@@ -145,4 +154,7 @@ module.exports = {
   FraudFlag,
   Announcement,
   AnnouncementReceipt,
+  ClassStaff,
+  ExcuseRequest,
+  UserPreference,
 };

@@ -32,7 +32,7 @@ function useWidth(ref) {
   return w;
 }
 
-export function TrendLine({ data = [], compare, height = 190, yMax = 100, label = 'Attendance rate by week' }) {
+export function TrendLine({ data = [], compare, height = 190, yMax = 100, label = 'Attendance rate by week', threshold = null }) {
   const box = useRef(null);
   const svgRef = useRef(null);
   const drawn = useRef(false);
@@ -89,6 +89,12 @@ export function TrendLine({ data = [], compare, height = 190, yMax = 100, label 
               <text x={pad.l - 8} y={y(t) + 3} textAnchor="end">{t}</text>
             </g>
           ))}
+          {threshold != null && (
+            <g className="threshold">
+              <line x1={pad.l} x2={pad.l + iw} y1={y(threshold)} y2={y(threshold)} />
+              <text x={pad.l + iw} y={y(threshold) - 5} textAnchor="end">Minimum {threshold}%</text>
+            </g>
+          )}
           {prevLine && <path className="line prev" d={prevLine} />}
           <path d={area} fill={`url(#trendFill-${gid})`} />
           <path className="line" d={line} />

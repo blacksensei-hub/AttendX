@@ -70,7 +70,9 @@ export function PageHeader({ title, accent, kicker, subtitle, action, children }
       gap:            'var(--space-4)',
       paddingBottom:  'var(--space-2)',
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* Basis 320px: on a phone the actions wrap below the title
+          instead of squeezing it into a sliver beside them. */}
+      <div style={{ flex: '1 1 320px', minWidth: 0 }}>
         <p className="kicker"><span className="dot" />{kicker ?? today}</p>
         <h1 style={{
           marginTop:     14,

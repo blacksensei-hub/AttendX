@@ -1,6 +1,7 @@
 const { Class, Session, Attendance, Enrollment, User } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const { QueryTypes }     = require('sequelize');
+const { findClassFor, taughtBySql } = require('../services/classAccess');
 const nodemailer         = require('nodemailer');
 
 // ─── Nodemailer transporter ───────────────────────────────────
@@ -29,14 +30,14 @@ exports.getAtRiskStudents = async (req, res) => {
           FILTER (WHERE s.status = 'closed')         AS "totalSessions",
 
         COUNT(DISTINCT a.session_id)
-          FILTER (WHERE a.status IN ('present','late')) AS "attended",
+          FILTER (WHERE a.status IN ('present','late','excused')) AS "attended",
 
         CASE
           WHEN COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed') = 0
           THEN 0
           ELSE ROUND(
             COUNT(DISTINCT a.session_id)
-              FILTER (WHERE a.status IN ('present','late'))
+              FILTER (WHERE a.status IN ('present','late','excused'))
             * 100.0
             / COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed')
           )
@@ -54,7 +55,7 @@ exports.getAtRiskStudents = async (req, res) => {
       -- join (not a FILTER) also keeps scans in a still-open session out
       -- of "attended", which used to push rates past 100 percent.
 
-      WHERE c.lecturer_id = :lecturerId
+      WHERE ${taughtBySql('c')}
 
       GROUP BY
         c.id, c.name, c.code, c.attendance_threshold,
@@ -64,7 +65,7 @@ exports.getAtRiskStudents = async (req, res) => {
         COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed') > 0
         AND ROUND(
           COUNT(DISTINCT a.session_id)
-            FILTER (WHERE a.status IN ('present','late'))
+            FILTER (WHERE a.status IN ('present','late','excused'))
           * 100.0
           / COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed')
         ) < c.attendance_threshold
@@ -123,14 +124,14 @@ exports.getMyAttendanceRates = async (req, res) => {
           FILTER (WHERE s.status = 'closed')           AS "totalSessions",
 
         COUNT(DISTINCT a.session_id)
-          FILTER (WHERE a.status IN ('present','late')) AS "attended",
+          FILTER (WHERE a.status IN ('present','late','excused')) AS "attended",
 
         CASE
           WHEN COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed') = 0
           THEN NULL
           ELSE ROUND(
             COUNT(DISTINCT a.session_id)
-              FILTER (WHERE a.status IN ('present','late'))
+              FILTER (WHERE a.status IN ('present','late','excused'))
             * 100.0
             / COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed')
           )
@@ -193,9 +194,7 @@ exports.sendThresholdWarnings = async (req, res) => {
     // attendance_threshold is now defined on the Class model so it will
     // always be present. We fall back to 75 as a safety net in case the
     // column is somehow null in the database.
-    const cls = await Class.findOne({
-      where: { id: classId, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, classId, 'edit');
     if (!cls)
       return res.status(404).json(error('Class not found or unauthorized'));
 
@@ -211,11 +210,11 @@ exports.sendThresholdWarnings = async (req, res) => {
           FILTER (WHERE s.status = 'closed')           AS "totalSessions",
 
         COUNT(DISTINCT a.session_id)
-          FILTER (WHERE a.status IN ('present','late')) AS "attended",
+          FILTER (WHERE a.status IN ('present','late','excused')) AS "attended",
 
         ROUND(
           COUNT(DISTINCT a.session_id)
-            FILTER (WHERE a.status IN ('present','late'))
+            FILTER (WHERE a.status IN ('present','late','excused'))
           * 100.0
           / NULLIF(
               COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed'),
@@ -242,7 +241,7 @@ exports.sendThresholdWarnings = async (req, res) => {
         COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed') > 0
         AND ROUND(
           COUNT(DISTINCT a.session_id)
-            FILTER (WHERE a.status IN ('present','late'))
+            FILTER (WHERE a.status IN ('present','late','excused'))
           * 100.0
           / NULLIF(
               COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'closed'),
@@ -298,9 +297,7 @@ exports.updateThreshold = async (req, res) => {
     if (!val || val < 1 || val > 100)
       return res.status(400).json(error('Threshold must be between 1 and 100'));
 
-    const cls = await Class.findOne({
-      where: { id: classId, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, classId, 'edit');
     if (!cls)
       return res.status(404).json(error('Class not found or unauthorized'));
 

@@ -21,6 +21,7 @@ import PageShell, { PageHeader }                from '../../components/layout/Pa
 import StatTile, { SectionTitle }               from '../../components/ui/StatTile';
 import { AnimatedList, AnimatedItem }           from '../../components/ui/AnimatedList';
 import { SPRING, TAP, EASE }                    from '../../lib/motion';
+import { shortName, withStop }                  from '../../lib/names';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -128,6 +129,7 @@ export default function StudentDashboard() {
   const pieData = [
     { name: 'Present', value: myStats?.present ?? 0, color: 'var(--green-fill)' },
     { name: 'Late',    value: myStats?.late    ?? 0, color: 'var(--amber-fill)' },
+    { name: 'Excused', value: myStats?.excused ?? 0, color: 'var(--violet)'     },
     { name: 'Absent',  value: myStats?.absent  ?? 0, color: 'var(--red-fill)'   },
   ];
 
@@ -139,12 +141,12 @@ export default function StudentDashboard() {
 
   const STAT_CARDS = [
     { label: 'This month',        value: `${myStats?.thisMonth ?? 0}%`,  tone: 'green',  featured: true, hint: `Across every class this month · ${allTimeRate}% all time` },
-    { label: 'Sessions attended', value: attended,                        tone: 'brand',  hint: `Present or late, of ${myStats?.totalSessions ?? 0} held` },
+    { label: 'Sessions attended', value: attended,                        tone: 'brand',  hint: `Present, late or excused, of ${myStats?.totalSessions ?? 0} held` },
     { label: 'On time',           value: `${myStats?.onTimeRate ?? 0}%`, tone: 'amber',  hint: 'Of the sessions you attended' },
     { label: 'Classes',           value: classes.length,                 tone: 'violet', hint: 'Enrolled this semester' },
   ];
 
-  const firstName = user?.name?.split(' ')[0] ?? '';
+  const firstName = shortName(user?.name);
   const today     = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
@@ -154,7 +156,7 @@ export default function StudentDashboard() {
       <PageHeader
         kicker={`Student / ${today}`}
         title="Hi,"
-        accent={`${firstName}.`}
+        accent={withStop(firstName)}
         subtitle={activeSessions.length > 0
           ? `${activeSessions.length} session${activeSessions.length !== 1 ? 's are' : ' is'} open right now. Mark your seat before it closes.`
           : 'Nothing is open right now. The moment a lecturer starts a session, it shows up here.'}
@@ -350,7 +352,27 @@ export default function StudentDashboard() {
               marginTop:  'var(--space-2)',
               lineHeight: 1.5,
             }}>
-              Contact your lecturer if you believe there is an error. You can also submit an attendance appeal from your{' '}
+              See how many sessions it takes to get back above each minimum in{' '}
+              <motion.button
+                whileTap={TAP.button}
+                onClick={() => navigate('/student/classes')}
+                style={{
+                  background: 'none', border: 'none', padding: 0, color: 'var(--brand-text)', cursor: 'pointer',
+                  fontWeight: 600, fontSize: 'inherit', textDecoration: 'underline', textUnderlineOffset: '2px',
+                }}
+              >
+                My classes
+              </motion.button>. Away for a good reason? Ask for it to be excused from{' '}
+              <motion.button
+                whileTap={TAP.button}
+                onClick={() => navigate('/student/requests?new=1')}
+                style={{
+                  background: 'none', border: 'none', padding: 0, color: 'var(--brand-text)', cursor: 'pointer',
+                  fontWeight: 600, fontSize: 'inherit', textDecoration: 'underline', textUnderlineOffset: '2px',
+                }}
+              >
+                Requests
+              </motion.button>. Marked absent in error? Appeal it from your{' '}
               <motion.button
                 whileTap={TAP.button}
                 onClick={() => navigate('/student/history')}

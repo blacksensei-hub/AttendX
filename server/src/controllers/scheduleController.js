@@ -1,5 +1,6 @@
 const { ClassSchedule, Class } = require('../models');
 const { success, error }       = require('../utils/apiResponse');
+const { findClassFor }         = require('../services/classAccess');
 
 // ─── Get all schedules for a class ────────────────────────────
 exports.getClassSchedules = async (req, res) => {
@@ -7,9 +8,7 @@ exports.getClassSchedules = async (req, res) => {
     const { classId } = req.params;
 
     // Verify ownership
-    const cls = await Class.findOne({
-      where: { id: classId, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, classId, 'view');
     if (!cls) return res.status(404).json(error('Class not found'));
 
     const schedules = await ClassSchedule.findAll({
@@ -43,9 +42,7 @@ exports.createSchedule = async (req, res) => {
       return res.status(400).json(error('Duration must be between 1 and 600 minutes'));
 
     // Verify class ownership
-    const cls = await Class.findOne({
-      where: { id: classId, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, classId, 'edit');
     if (!cls) return res.status(404).json(error('Class not found'));
 
     const schedule = await ClassSchedule.create({
@@ -74,9 +71,7 @@ exports.updateSchedule = async (req, res) => {
     if (!schedule) return res.status(404).json(error('Schedule not found'));
 
     // Verify ownership through the class
-    const cls = await Class.findOne({
-      where: { id: schedule.class_id, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, schedule.class_id, 'edit');
     if (!cls) return res.status(403).json(error('Not authorized'));
 
     // Only allow updating whitelisted fields — never allow changing class_id
@@ -107,9 +102,7 @@ exports.deleteSchedule = async (req, res) => {
     const schedule = await ClassSchedule.findByPk(scheduleId);
     if (!schedule) return res.status(404).json(error('Schedule not found'));
 
-    const cls = await Class.findOne({
-      where: { id: schedule.class_id, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, schedule.class_id, 'edit');
     if (!cls) return res.status(403).json(error('Not authorized'));
 
     await schedule.destroy();
@@ -128,9 +121,7 @@ exports.toggleSchedule = async (req, res) => {
     const schedule = await ClassSchedule.findByPk(scheduleId);
     if (!schedule) return res.status(404).json(error('Schedule not found'));
 
-    const cls = await Class.findOne({
-      where: { id: schedule.class_id, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, schedule.class_id, 'edit');
     if (!cls) return res.status(403).json(error('Not authorized'));
 
     await schedule.update({ is_active: !schedule.is_active });

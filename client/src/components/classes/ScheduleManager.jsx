@@ -6,6 +6,7 @@ import {
 }                                                    from 'lucide-react';
 import api                                           from '../../services/api';
 import toast                                         from 'react-hot-toast';
+import { ConfirmDialog }                             from '../console/overlays';
 import {
   EASE, DURATION, SPRING, TAP,
   listContainer, listItem,
@@ -35,6 +36,7 @@ const DAYS = [
 export default function ScheduleManager({ classId, className }) {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
+  const [removing, setRemoving] = useState(null);   // { id, label }
 
   // Form state
   const [newDay,      setNewDay]      = useState(1);
@@ -57,6 +59,8 @@ export default function ScheduleManager({ classId, className }) {
       toast.success('Schedule added');
       qc.invalidateQueries({ queryKey: ['class-schedules', classId] });
       qc.invalidateQueries({ queryKey: ['classes'] });
+      qc.invalidateQueries({ queryKey: ['class-hub', classId] });
+      qc.invalidateQueries({ queryKey: ['timetable'] });
       setShowAdd(false);
       setNewTime('10:00');
     },
@@ -70,6 +74,8 @@ export default function ScheduleManager({ classId, className }) {
       toast.success(res.data?.message ?? 'Toggled');
       qc.invalidateQueries({ queryKey: ['class-schedules', classId] });
       qc.invalidateQueries({ queryKey: ['classes'] });
+      qc.invalidateQueries({ queryKey: ['class-hub', classId] });
+      qc.invalidateQueries({ queryKey: ['timetable'] });
     },
   });
 
@@ -79,6 +85,8 @@ export default function ScheduleManager({ classId, className }) {
       toast.success('Schedule removed');
       qc.invalidateQueries({ queryKey: ['class-schedules', classId] });
       qc.invalidateQueries({ queryKey: ['classes'] });
+      qc.invalidateQueries({ queryKey: ['class-hub', classId] });
+      qc.invalidateQueries({ queryKey: ['timetable'] });
     },
   });
 
@@ -362,15 +370,25 @@ export default function ScheduleManager({ classId, className }) {
                 onDelete={() => {
                   const day  = DAYS.find(d => d.value === sched.day_of_week);
                   const time = sched.start_time?.substring(0, 5) ?? '';
-                  if (confirm(`Delete this ${day?.label} ${time} schedule?`)) {
-                    deleteMut.mutate(sched.id);
-                  }
+                  setRemoving({ id: sched.id, label: `${day?.label ?? ''} ${time}`.trim() });
                 }}
               />
             ))}
           </AnimatePresence>
         </motion.div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(removing)}
+        onClose={() => setRemoving(null)}
+        busy={deleteMut.isPending}
+        danger
+        title={`Remove the ${removing?.label} slot?`}
+        confirmLabel="Remove slot"
+        onConfirm={() => deleteMut.mutate(removing.id, { onSettled: () => setRemoving(null) })}
+      >
+        Sessions stop opening on their own at this time. Sessions already held keep their attendance.
+      </ConfirmDialog>
     </div>
   );
 }

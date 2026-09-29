@@ -198,7 +198,7 @@ async function sendSessionClosedEmails({ className, sessionTitle, closedAt, reco
   });
   await Promise.allSettled(
     records.map(record => {
-      const statusColor = { present: '#10b981', late: '#f59e0b', absent: '#ef4444' }[record.status] ?? '#6b7280';
+      const statusColor = { present: '#10b981', late: '#f59e0b', absent: '#ef4444', excused: '#4f46e5' }[record.status] ?? '#6b7280';
       const statusLabel = record.status ? record.status.charAt(0).toUpperCase() + record.status.slice(1) : 'Absent';
       const title = `Session closed — ${className}`;
       const body = `
@@ -399,8 +399,77 @@ async function sendDigestEmail({ to, name, periodLabel, sections }) {
   return sendMail({ to, subject: `AttendX weekly digest: ${periodLabel}`, html: buildEmailHTML('Weekly digest', body) });
 }
 
+// ─── 10. Lecturer and student tools ───────────────────────────
+// Short transactional emails. Everything a user typed is escaped.
+const para = (html) => `<p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+const button = (href, label, bg = '#2248FF') => `
+  <a href="${href}"
+     style="display:inline-block;background:${bg};color:#ffffff;text-decoration:none;
+            padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">${label}</a>`;
+const quote = (text) => `
+  <div style="background:#f8faff;border-left:4px solid #2248FF;border-radius:0 10px 10px 0;
+              padding:14px 18px;margin:0 0 20px;color:#374151;font-size:14px;line-height:1.65;">
+    ${escapeHtml(text).replace(/\n/g, '<br/>')}
+  </div>`;
+
+// To the owner and co-lecturers when a student asks for an absence to be excused.
+async function sendExcuseRequestEmail({ to, lecturerName, studentName, className, rangeLabel, reasonLabel, note }) {
+  const body = `
+    ${para(`Hi <strong>${escapeHtml(lecturerName)}</strong>,`)}
+    ${para(`<strong>${escapeHtml(studentName)}</strong> has asked for ${escapeHtml(rangeLabel)} in
+      <strong style="color:#2248FF;">${escapeHtml(className)}</strong> to be excused (${escapeHtml(reasonLabel)}).`)}
+    ${quote(note)}
+    ${button(`${process.env.CLIENT_URL}/lecturer/requests?tab=excuses`, 'Review the request')}`;
+  return sendMail({ to, subject: `Excused absence request: ${className}`, html: buildEmailHTML('An absence to review', body) });
+}
+
+// To the student once their request has been decided.
+async function sendExcuseOutcomeEmail({ to, studentName, className, rangeLabel, approved, applied, reviewerName, note }) {
+  const body = `
+    ${para(`Hi <strong>${escapeHtml(studentName)}</strong>,`)}
+    ${para(approved
+      ? `${escapeHtml(reviewerName)} has excused ${escapeHtml(rangeLabel)} in <strong style="color:#2248FF;">${escapeHtml(className)}</strong>.
+         ${applied ? `${applied} absence${applied === 1 ? ' is' : 's are'} now marked excused. ` : ''}Excused sessions count towards your attendance minimum.`
+      : `${escapeHtml(reviewerName)} did not excuse ${escapeHtml(rangeLabel)} in <strong style="color:#2248FF;">${escapeHtml(className)}</strong>.`)}
+    ${note ? quote(note) : ''}
+    ${button(`${process.env.CLIENT_URL}/student/requests`, 'See your requests')}`;
+  return sendMail({
+    to,
+    subject: `${approved ? 'Absence excused' : 'Absence not excused'}: ${className}`,
+    html: buildEmailHTML(approved ? 'Your absence is excused' : 'Your request was declined', body),
+  });
+}
+
+// The "class starts soon" reminder, at the lead time the student chose.
+async function sendClassReminderEmail({ to, studentName, className, startTime, minutes, location }) {
+  const body = `
+    ${para(`Hi <strong>${escapeHtml(studentName)}</strong>,`)}
+    ${para(`<strong style="color:#2248FF;">${escapeHtml(className)}</strong> starts in ${minutes} minutes, at
+      <strong>${escapeHtml(startTime)}</strong>${location ? ` in ${escapeHtml(location)}` : ''}. Scan in when the session opens.`)}
+    ${button(`${process.env.CLIENT_URL}/student`, 'Open AttendX')}
+    <p style="color:#94a3b8;font-size:13px;margin-top:20px;">
+      Change or turn off these reminders on your timetable page.
+    </p>`;
+  return sendMail({ to, subject: `${className} starts in ${minutes} minutes`, html: buildEmailHTML('Class starting soon', body) });
+}
+
+// To a lecturer added to a class as a co-lecturer or teaching assistant.
+async function sendStaffAddedEmail({ to, name, className, roleLabel, addedBy }) {
+  const body = `
+    ${para(`Hi <strong>${escapeHtml(name)}</strong>,`)}
+    ${para(`${escapeHtml(addedBy)} added you to <strong style="color:#2248FF;">${escapeHtml(className)}</strong> as ${escapeHtml(roleLabel)}.
+      It is now in your classes.`)}
+    ${button(`${process.env.CLIENT_URL}/lecturer/classes`, 'Open your classes')}`;
+  return sendMail({ to, subject: `You've been added to ${className}`, html: buildEmailHTML('A class was shared with you', body) });
+}
+
 // ─── Exports ──────────────────────────────────────────────────
 module.exports = {
+  sendExcuseRequestEmail,
+  sendExcuseOutcomeEmail,
+  sendClassReminderEmail,
+  sendStaffAddedEmail,
+  escapeHtml,
   sendSessionOpenedEmail,
   sendAttendanceConfirmedEmail,
   sendSessionClosingSoonEmail,

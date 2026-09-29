@@ -1,6 +1,7 @@
 const { Session, Attendance, Class, User, sequelize } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const { Op, QueryTypes }  = require('sequelize');
+const { findClassFor, classRoles, taughtBySql } = require('../services/classAccess');
 
 // ─── Shared: which sessions count for a student ───────────────
 //
@@ -14,13 +15,13 @@ function studentScope(studentId, { status, from, to } = {}) {
   const conditions = [
     `e.student_id = :studentId`,
     `s.status = 'closed'`,
-    `(a.status IN ('present', 'late') OR s.open_at >= COALESCE(e.enrolled_at, s.open_at))`,
+    `(a.status IN ('present', 'late', 'excused') OR s.open_at >= COALESCE(e.enrolled_at, s.open_at))`,
   ];
   const replacements = { studentId };
 
   if (status === 'absent') {
     conditions.push(`(a.id IS NULL OR a.status = 'absent')`);
-  } else if (status === 'present' || status === 'late') {
+  } else if (status === 'present' || status === 'late' || status === 'excused') {
     conditions.push(`a.status = :status`);
     replacements.status = status;
   }
@@ -44,11 +45,10 @@ const STUDENT_FROM = `
 
 const pct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
 
-// Lecturer report endpoints must only ever expose the caller's own
-// classes. Classes are deactivated rather than deleted, so ownership
-// always comes from classes.lecturer_id.
-const ownsClass = (classId, lecturerId) =>
-  classId ? Class.findOne({ where: { id: classId, lecturer_id: lecturerId }, attributes: ['id', 'name'] }) : null;
+// Lecturer report endpoints must only ever expose classes the caller
+// teaches (owner, co-lecturer or TA; see services/classAccess).
+const ownsClass = (classId, lecturerId, perm = 'view') =>
+  classId ? findClassFor(lecturerId, classId, perm) : null;
 
 // ─── Lecturer dashboard stats ─────────────────────────────────
 // One query: every closed session of the lecturer's classes, with how
@@ -60,14 +60,14 @@ exports.getDashboardStats = async (req, res) => {
         s.id,
         s.open_at                                                    AS "openAt",
         COUNT(e.student_id)                                          AS expected,
-        COUNT(a.id) FILTER (WHERE a.status IN ('present', 'late'))   AS attended
+        COUNT(a.id) FILTER (WHERE a.status IN ('present', 'late', 'excused')) AS attended
       FROM sessions s
       INNER JOIN classes     c ON c.id        = s.class_id
       INNER JOIN enrollments e ON e.class_id  = s.class_id
                               AND s.open_at  >= COALESCE(e.enrolled_at, s.open_at)
       LEFT  JOIN attendance  a ON a.session_id = s.id
                               AND a.student_id = e.student_id
-      WHERE c.lecturer_id = :lecturerId
+      WHERE ${taughtBySql('c')}
         AND s.status      = 'closed'
       GROUP BY s.id, s.open_at
     `, {
@@ -116,10 +116,12 @@ exports.getStudentStats = async (req, res) => {
       WHERE ${where}
     `, { replacements, type: QueryTypes.SELECT });
 
+    // Excused absences count towards the minimum, like present and late.
     const present  = rows.filter(r => r.status === 'present').length;
     const late     = rows.filter(r => r.status === 'late').length;
-    const absent   = rows.length - present - late;
-    const attended = present + late;
+    const excused  = rows.filter(r => r.status === 'excused').length;
+    const absent   = rows.length - present - late - excused;
+    const attended = present + late + excused;
 
     // This calendar month
     const now        = new Date();
@@ -149,11 +151,12 @@ exports.getStudentStats = async (req, res) => {
     return res.json(success({
       present,
       late,
+      excused,
       absent,
       attended,
       totalSessions: rows.length,              // sessions the student was expected at
       attendanceRate: pct(attended, rows.length),
-      onTimeRate:    pct(present, attended),   // of the sessions attended, how many on time
+      onTimeRate:    pct(present, present + late),   // of the sessions scanned into, how many on time
       thisMonth:     pct(monthAttended, monthRows.length),
       trend,
     }));
@@ -215,8 +218,8 @@ exports.getClassSummary = async (req, res) => {
 // checking whether s.class exists in the join result.
 exports.getAllSessions = async (req, res) => {
   try {
-    const classes  = await Class.findAll({ where: { lecturer_id: req.user.id } });
-    const classIds = classes.map(c => c.id);
+    const roles    = await classRoles(req.user.id);
+    const classIds = [...roles.keys()];
 
     const sessions = await Session.findAll({
       where:   { class_id: classIds },
@@ -241,9 +244,10 @@ exports.getAllSessions = async (req, res) => {
       : [];
     const tally = new Map();
     for (const c of counts) {
-      const t = tally.get(c.session_id) ?? { present: 0, late: 0, total: 0 };
+      const t = tally.get(c.session_id) ?? { present: 0, late: 0, excused: 0, total: 0 };
       if (c.status === 'present') t.present = Number(c.n);
       if (c.status === 'late')    t.late    = Number(c.n);
+      if (c.status === 'excused') t.excused = Number(c.n);
       t.total += Number(c.n);
       tally.set(c.session_id, t);
     }
@@ -258,7 +262,8 @@ exports.getAllSessions = async (req, res) => {
       status:    s.status,
       openAt:    s.open_at,
       closedAt:  s.closed_at,
-      ...(tally.get(s.id) ?? { present: 0, late: 0, total: 0 }),
+      myRole:    roles.get(s.class_id) ?? null,
+      ...(tally.get(s.id) ?? { present: 0, late: 0, excused: 0, total: 0 }),
     }));
 
     return res.json(success({ sessions: enriched }));
@@ -284,6 +289,7 @@ exports.getStudentHistory = async (req, res) => {
       SELECT
         COALESCE(a.id::text, s.id::text || '-' || e.student_id::text) AS id,
         s.id                          AS "sessionId",
+        s.class_id                    AS "classId",
         s.title                       AS "sessionTitle",
         s.class_name_snapshot         AS "className",
         s.open_at                     AS "openAt",
@@ -475,8 +481,9 @@ exports.exportPDF = async (req, res) => {
 
       const present = records.filter(r => r.status === 'present').length;
       const late    = records.filter(r => r.status === 'late').length;
+      const excused = records.filter(r => r.status === 'excused').length;
       const absent  = records.filter(r => r.status === 'absent').length;
-      doc.text(`Present: ${present}  Late: ${late}  Absent: ${absent}  Total marked: ${records.length}`);
+      doc.text(`Present: ${present}  Late: ${late}  Excused: ${excused}  Absent: ${absent}  Total marked: ${records.length}`);
       doc.moveDown(0.5);
 
       if (records.length === 0) {
@@ -484,7 +491,8 @@ exports.exportPDF = async (req, res) => {
       } else {
         records.forEach((r, idx) => {
           const statusColor = r.status === 'present' ? '#10b981'
-                            : r.status === 'late'    ? '#d97706' : '#ef4444';
+                            : r.status === 'late'    ? '#d97706'
+                            : r.status === 'excused' ? '#4f46e5' : '#ef4444';
           doc.fontSize(10).fillColor('#111827')
              .text(
                `${idx + 1}. ${r.student?.student_id ? `[${r.student.student_id}] ` : ''}` +
@@ -514,7 +522,7 @@ exports.deleteSessionReport = async (req, res) => {
     const session = await Session.findByPk(sessionId);
     if (!session) return res.status(404).json(error('Session not found'));
 
-    if (!(await ownsClass(session.class_id, req.user.id))) {
+    if (!(await ownsClass(session.class_id, req.user.id, 'own'))) {
       return res.status(403).json(error('Not authorized to delete this report'));
     }
     if (session.status !== 'closed') {

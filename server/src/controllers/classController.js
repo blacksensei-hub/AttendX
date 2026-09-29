@@ -1,5 +1,6 @@
 const { Class, Enrollment, User, Session, ClassSchedule } = require('../models');
 const { success, error } = require('../utils/apiResponse');
+const { classRoles, findClassFor, roleOn } = require('../services/classAccess');
 
 // ─── Generate a unique class code ─────────────────────────────
 // Excludes ambiguous characters (I/1, O/0) for easier readability
@@ -17,11 +18,16 @@ function generateCode() {
 //   - Total enrollment count
 // The ClassCard component uses the schedules array to show a
 // "N active schedules" or "No recurring schedule" badge.
+// Classes the lecturer co-teaches or assists on are included, each
+// with myRole ('owner', 'co_lecturer' or 'ta') and the owner's name.
 exports.getMyClasses = async (req, res) => {
   try {
+    const roles = await classRoles(req.user.id);
+    if (roles.size === 0) return res.json(success({ classes: [] }));
     const classes = await Class.findAll({
-      where: { lecturer_id: req.user.id },
+      where: { id: [...roles.keys()] },
       include: [
+        { model: User, as: 'lecturer', attributes: ['id', 'name'] },
         {
           model:    Session,
           as:       'sessions',
@@ -54,6 +60,7 @@ exports.getMyClasses = async (req, res) => {
         ...cls.toJSON(),
         enrollmentCount,
         activeSession,
+        myRole: roles.get(cls.id),
       };
     }));
 
@@ -109,10 +116,17 @@ exports.createClass = async (req, res) => {
 // historical reports still show "CS301" instead of "Deleted class".
 exports.deleteClass = async (req, res) => {
   try {
-    const cls = await Class.findOne({
-      where: { id: req.params.id, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, req.params.id, 'own');
     if (!cls) return res.status(404).json(error('Class not found'));
+
+    // Close a running session first, so its absences are recorded while
+    // the enrolment list still exists and nobody is left with a session
+    // that has no staff to close it.
+    const open = await Session.findOne({ where: { class_id: cls.id, status: 'open' } });
+    if (open) {
+      await open.update({ status: 'closed', closed_at: new Date() });
+      await require('../services/sessionLifecycle').finalizeClose(open, { cls, io: req.app.get('io') });
+    }
 
     await Session.update(
       { class_name_snapshot: cls.name },
@@ -133,6 +147,10 @@ exports.deleteClass = async (req, res) => {
 };
 
 // ─── Get class details ────────────────────────────────────────
+// The roster (names and emails) is only for the class's teaching staff
+// and admins. An enrolled student gets the class without it; anyone
+// else gets a 404. This used to return any class's roster to any
+// signed-in user.
 exports.getClassDetail = async (req, res) => {
   try {
     const cls = await Class.findByPk(req.params.id, {
@@ -143,7 +161,16 @@ exports.getClassDetail = async (req, res) => {
       }],
     });
     if (!cls) return res.status(404).json(error('Class not found'));
-    return res.json(success({ class: cls }));
+
+    if (req.user.role === 'admin') return res.json(success({ class: cls }));
+    const role = await roleOn(req.user.id, cls);
+    if (role) return res.json(success({ class: { ...cls.toJSON(), myRole: role } }));
+
+    const enrolled = req.user.role === 'student'
+      && await Enrollment.count({ where: { class_id: cls.id, student_id: req.user.id } });
+    if (!enrolled) return res.status(404).json(error('Class not found'));
+    const { students: _roster, ...rest } = cls.toJSON();
+    return res.json(success({ class: rest }));
   } catch (err) {
     console.error('GET CLASS DETAIL ERROR:', err.message);
     return res.status(500).json(error('Server error'));

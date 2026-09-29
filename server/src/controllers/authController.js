@@ -3,6 +3,8 @@ const jwt    = require('jsonwebtoken');
 const { User } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 const { success, error } = require('../utils/apiResponse');
+const { hashToken } = require('../services/inviteService');
+const { recordAttempt } = require('../services/fraudService');
 
 // ─── Device binding policy ────────────────────────────────────
 // Which roles are locked to a device. Students only, deliberately: they're
@@ -137,6 +139,13 @@ exports.login = async (req, res) => {
     if (!user) return res.status(401).json(error('Invalid email or password'));
     if (!user.is_active) return res.status(403).json(error('Account deactivated'));
 
+    // Imported accounts have no usable password until the invite is used.
+    if (user.invite_token_hash) {
+      return res.status(403).json(error(
+        'Finish setting up your account first, using the invite link in your email.'
+      ));
+    }
+
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json(error('Invalid email or password'));
 
@@ -165,6 +174,7 @@ exports.login = async (req, res) => {
         console.warn(
           `[DeviceBind] REJECTED ${user.email} (mobile) — bound=${boundId} attempted=${deviceId}`
         );
+        recordAttempt({ userId: user.id, reason: 'device_mismatch', deviceId, ip: req.ip });
         return res.status(403).json(error(
           'The AttendX app is registered to a different phone on this account. ' +
           'Please use your original phone, or contact your administrator to reset it.'
@@ -177,6 +187,10 @@ exports.login = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
+
+    // Fire and forget: the health of a sign-in never depends on this.
+    User.update({ last_login_at: new Date() }, { where: { id: user.id } })
+      .catch(err => console.warn('[Login] last_login_at:', err.message));
 
     return res.json(success({
       user:  { id: user.id, name: user.name, email: user.email,
@@ -215,6 +229,49 @@ exports.changePassword = async (req, res) => {
 
     return res.json(success(null, 'Password changed successfully'));
   } catch (err) {
+    return res.status(500).json(error('Server error'));
+  }
+};
+// ─── Invites (accounts created by an admin import) ────────────
+// The link carries a random token; only its hash is stored. Both calls
+// answer the same way for unknown, used and expired links, so a link
+// can't be probed for which accounts exist.
+async function findInvite(token) {
+  if (!token || String(token).length < 20) return null;
+  const user = await User.scope('withPassword').findOne({
+    where: { invite_token_hash: hashToken(token) },
+  });
+  if (!user || !user.invite_expires_at || new Date(user.invite_expires_at) < new Date()) return null;
+  return user;
+}
+
+exports.checkInvite = async (req, res) => {
+  try {
+    const user = await findInvite(req.params.token);
+    if (!user) return res.status(410).json(error('This invite link has expired or was already used. Ask your administrator for a new one.'));
+    return res.json(success({ name: user.name, email: user.email, role: user.role }));
+  } catch (err) {
+    return res.status(500).json(error('Server error'));
+  }
+};
+
+exports.acceptInvite = async (req, res) => {
+  try {
+    const { password } = req.body ?? {};
+    if (typeof password !== 'string' || password.length < 8)
+      return res.status(400).json(error('Use at least 8 characters for your password'));
+
+    const user = await findInvite(req.params.token);
+    if (!user) return res.status(410).json(error('This invite link has expired or was already used. Ask your administrator for a new one.'));
+
+    await user.update({
+      password:          await bcrypt.hash(password, 12),
+      invite_token_hash: null,
+      invite_expires_at: null,
+    });
+    return res.json(success({ email: user.email }, 'Password set. You can sign in now.'));
+  } catch (err) {
+    console.error('[Invite] accept:', err.message);
     return res.status(500).json(error('Server error'));
   }
 };

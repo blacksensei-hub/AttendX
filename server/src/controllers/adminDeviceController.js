@@ -16,6 +16,8 @@
 
 const { User }           = require('../models');
 const { success, error } = require('../utils/apiResponse');
+const { audit } = require('../services/auditService');
+const { checkDeviceResets } = require('../services/fraudService');
 
 // --- PUT /api/admin/users/:id/reset-device ---
 exports.resetUserDevice = async (req, res) => {
@@ -58,6 +60,14 @@ exports.resetUserDevice = async (req, res) => {
       `[DeviceBind] RESET ${user.email} (mobile) by admin ${req.user.id} ` +
       `(was bound to ${previousDevice}, sessions revoked)`
     );
+
+    await audit(req, {
+      action:  'user.device_reset',
+      target:  { type: 'user', id: user.id, label: user.email },
+      summary: `Reset the phone registration of ${user.name}`,
+      changes: { bound_mobile_device_id: [previousDevice, null] },
+    });
+    await checkDeviceResets(user.id);
 
     return res.json(success({
       user: {

@@ -4,12 +4,6 @@ import api from './api';
 
 const unwrap = (res) => res?.data ?? res ?? {};
 
-// ─── Dashboard stats ─────────────────────────────────────────
-const getStats = async () => {
-  const { data } = await api.get('/admin/stats');
-  return unwrap(data);
-};
-
 // ─── Users ───────────────────────────────────────────────────
 const listUsers = async (params = {}) => {
   const { data } = await api.get('/admin/users', { params });
@@ -101,7 +95,6 @@ const getHeatmapData = async () => {
 
 // ─── Named exports ────────────────────────────────────────────
 export {
-  getStats,
   listUsers,
   toggleUserStatus,
   updateUserRole,
@@ -121,7 +114,6 @@ export {
 
 // ─── Object export (used by the admin pages) ───────────────────
 export const adminService = {
-  getStats,
   listUsers,
   toggleUserStatus,
   updateUserRole,

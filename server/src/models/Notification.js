@@ -12,10 +12,16 @@ const Notification = sequelize.define('Notification', {
     allowNull: false,
   },
   type: {
+    // Must match enum_notifications_type in the database (see
+    // server/sql/2026-09-27_admin_console.sql for the last additions).
     type:      DataTypes.ENUM(
       'session_opened',
       'attendance_confirmed',
-      'session_closing_soon'
+      'session_closing_soon',
+      'announcement',
+      'at_risk',
+      'at_risk_alert',
+      'security'
     ),
     allowNull: false,
   },

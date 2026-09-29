@@ -231,6 +231,15 @@ exports.reviewAppeal = async (req, res) => {
       console.error('[Email] Appeal outcome error:', err.message)
     );
 
+    await require('../services/auditService').audit(req, {
+      action:  'appeal.reviewed',
+      target:  { type: 'appeal', id: appeal.id, label: `${appeal.student?.name ?? 'Student'}, ${appeal.session?.class_name_snapshot ?? 'class'}` },
+      summary: decision === 'approved'
+        ? `Approved an appeal; marked ${status}`
+        : 'Rejected an appeal',
+      changes: { decision, status: decision === 'approved' ? status : null, note: lecturer_note?.trim() || null },
+    });
+
     return res.json(success({ appeal }, `Appeal ${decision} successfully`));
   } catch (err) {
     console.error('REVIEW APPEAL ERROR:', err.message);

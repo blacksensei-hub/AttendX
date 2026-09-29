@@ -6,6 +6,7 @@ const {
 } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const emailService        = require('../services/emailService');
+const { resolveRange }    = require('../services/calendarService');
 
 const APPROACHING_BAND      = 5;
 const MIN_SESSIONS_FOR_EVAL = 3;
@@ -14,6 +15,13 @@ const DROPOUT_CONSECUTIVE   = 2;
 // ─── GET /api/admin/at-risk ──────────────────────────────────
 exports.getAtRisk = async (req, res) => {
   try {
+    // Current semester by default (all time when none is defined);
+    // ?semesterId= or ?from=&to= pick another range.
+    const range = await resolveRange(req.query);
+    const openAt = {};
+    if (range.from) openAt[Op.gte] = range.from;
+    if (range.to)   openAt[Op.lt]  = range.to;
+
     const [classes, closedSessions, enrollments] = await Promise.all([
       Class.findAll({
         include: [{
@@ -23,7 +31,7 @@ exports.getAtRisk = async (req, res) => {
         }],
       }),
       Session.findAll({
-        where:      { status: 'closed' },
+        where:      { status: 'closed', ...(range.from || range.to ? { open_at: openAt } : {}) },
         attributes: ['id', 'class_id', 'open_at', 'created_at'],
         order:      [['created_at', 'DESC']],
       }),
@@ -42,6 +50,7 @@ exports.getAtRisk = async (req, res) => {
         approaching:     [],
         recentDropouts:  [],
         summary: { totalAtRisk: 0, belowCount: 0, approachingCount: 0, dropoutCount: 0 },
+        range:   { label: range.label },
       }));
     }
 
@@ -158,6 +167,7 @@ exports.getAtRisk = async (req, res) => {
         approachingCount: approaching.length,
         dropoutCount:     recentDropouts.length,
       },
+      range: { label: range.label },
     }));
 
   } catch (err) {

@@ -1,6 +1,8 @@
 // server/src/services/sessionLifecycle.js
 const { Enrollment, Attendance, User } = require('../models');
 const { sendSessionClosedEmails }      = require('./emailService');
+const { opsEmit }                      = require('./opsFeed');
+const { sweepSession }                 = require('./fraudService');
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -103,6 +105,14 @@ async function finalizeClose(session, { cls, io } = {}) {
   }
 
   io?.to(`session:${session.id}`).emit('session:closed', { sessionId: session.id });
+  opsEmit('ops:session', {
+    type: 'closed', sessionId: session.id,
+    className: cls?.name ?? session.class_name_snapshot ?? 'A class',
+  });
+
+  // Session-level fraud rules (e.g. identical GPS positions). Runs
+  // after the close is complete and never throws.
+  sweepSession(session);
 
   // Fire and forget: summary emails can take a while
   notifySessionClosed(session, cls);

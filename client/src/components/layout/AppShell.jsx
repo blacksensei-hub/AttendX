@@ -1,10 +1,10 @@
 // client/src/components/layout/AppShell.jsx
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import {
   NavLink, Outlet, useLocation, useNavigate, ScrollRestoration,
 }                                            from 'react-router-dom';
 import { motion, AnimatePresence }           from 'framer-motion';
-import { Menu, X, LogOut, Sun, Moon, ChevronDown } from 'lucide-react';
+import { Menu, X, LogOut, Sun, Moon, ChevronDown, Search } from 'lucide-react';
 import { useQuery }                          from '@tanstack/react-query';
 import toast                                 from 'react-hot-toast';
 
@@ -16,6 +16,13 @@ import { useAuthStore }                      from '../../store/authStore';
 import { useUIStore }                        from '../../store/uiStore';
 import { prefetchRoute }                     from '../../router/prefetch';
 import { useScrolledPast }                   from '../../hooks/useScrolledPast';
+import { consoleApi }                        from '../../services/consoleService';
+import { useCommandPaletteHotkey }           from '../console/format';
+import { ADMIN_NAV }                         from './adminNav';
+import '../console/console.css';
+
+// cmdk and the palette only load the first time an admin opens it.
+const CommandPalette = lazy(() => import('../console/CommandPalette'));
 import api                                   from '../../services/api';
 import { EASE, SPRING, TAP }                 from '../../lib/motion';
 
@@ -30,6 +37,10 @@ import { EASE, SPRING, TAP }                 from '../../lib/motion';
  *
  * Once the page scrolls, the bar lifts into a centred floating pill,
  * the same move the landing nav makes (styles: .app-nav in App.css).
+ *
+ * Admins get the console (Look B, design-system/attendx/pages/
+ * admin-console.md): its own theme, grouped nav menus from adminNav.js,
+ * and a Ctrl/Cmd+K command palette.
  *
  * Under 1100px the rail folds into a full-screen menu set in big
  * numbered display type ("01 Dashboard").
@@ -54,18 +65,11 @@ const NAV = {
     { label: 'My classes', to: '/student/classes' },
     { label: 'History',    to: '/student/history' },
   ],
-  admin: [
-    { label: 'Overview', to: '/admin' },
-    { label: 'Users',    to: '/admin/users' },
-    { label: 'Classes',  to: '/admin/classes' },
-    { label: 'Sessions', to: '/admin/sessions' },
-    { label: 'At-risk',  to: '/admin/at-risk' },
-    { label: 'Heatmap',  to: '/admin/heatmap' },
-    { label: 'Audit',    to: '/admin/audit' },
-  ],
+  admin: ADMIN_NAV,
 };
 
 const RAIL_BREAKPOINT = '(min-width: 1100px)';
+const noop = () => {};
 
 function useWideRail() {
   const [wide, setWide] = useState(() =>
@@ -104,11 +108,26 @@ export default function AppShell({ role }) {
   const { user, logout } = useAuthStore();
   const navigate      = useNavigate();
   const items         = NAV[role] ?? NAV.student;
+  const isConsole     = role === 'admin';
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Stays mounted after the first open so its exit animation can play.
+  const [paletteMounted, setPaletteMounted] = useState(false);
+  const setPalette = (next) => { setPaletteMounted(true); setPaletteOpen(next); };
+  const setInConsole  = useUIStore(s => s.setInConsole);
   // Pill once scrolled, but never under the open full-screen menu,
   // whose panel starts right below the bar.
   const pill          = useScrolledPast(16) && !open;
 
   usePauseWhenHidden();
+
+  // While the admin console is mounted, App.jsx applies its theme.
+  useEffect(() => {
+    if (!isConsole) return undefined;
+    setInConsole(true);
+    return () => setInConsole(false);
+  }, [isConsole, setInConsole]);
+
+  useCommandPaletteHotkey(isConsole ? setPalette : noop);
 
   // Lock page scroll behind the open menu. On <html>, not <body>: html
   // carries overflow-x: clip, so an overflow on body would make body its
@@ -132,7 +151,13 @@ export default function AppShell({ role }) {
     refetchInterval: 60_000,
     enabled:         role === 'lecturer',
   });
-  const badges = { appeals: appealsData?.pendingCount ?? 0 };
+  const { data: flagData } = useQuery({
+    queryKey:        ['admin-flag-count'],
+    queryFn:         () => consoleApi.fraud({ summary: 1 }),
+    refetchInterval: 60_000,
+    enabled:         isConsole,
+  });
+  const badges = { appeals: appealsData?.pendingCount ?? 0, flags: flagData?.counts?.open ?? 0 };
 
   const handleLogout = () => {
     logout();
@@ -141,8 +166,11 @@ export default function AppShell({ role }) {
   };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', width: '100%' }}>
-      <div className="env-layer" aria-hidden="true" />
+    <div className={isConsole ? 'console' : undefined}
+         style={{ position: 'relative', minHeight: '100dvh', width: '100%', ...(isConsole ? { background: 'var(--bg)' } : null) }}>
+      {isConsole
+        ? <div className="console-grid" aria-hidden="true" />
+        : <div className="env-layer" aria-hidden="true" />}
       <NetworkBanner />
       <ImpersonationBanner />
       <ScrollRestoration />
@@ -173,6 +201,14 @@ export default function AppShell({ role }) {
             gap:        8,
             flexShrink: 0,
           }}>
+            {isConsole && (
+              <button type="button" className="icon-btn" onClick={() => setPalette(true)}
+                      aria-label="Search and commands (Ctrl+K)" title="Search and commands (Ctrl+K)"
+                      style={wide ? { width: 'auto', padding: '0 8px 0 10px', gap: 8, borderRadius: 'var(--radius-pill)', display: 'inline-flex', alignItems: 'center' } : { borderRadius: 'var(--radius-pill)', width: 38, height: 38 }}>
+                <Search size={15} />
+                {wide && <span className="kbd">Ctrl K</span>}
+              </button>
+            )}
             {role !== 'admin' && <NotificationPanel />}
             <UserMenu user={user} role={role} onLogout={handleLogout} compact={!wide} />
             {!wide && (
@@ -202,6 +238,12 @@ export default function AppShell({ role }) {
           />
         )}
       </AnimatePresence>
+
+      {isConsole && paletteMounted && (
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+        </Suspense>
+      )}
 
       {/* ── Page ────────────────────────────────────────────── */}
       <main
@@ -237,56 +279,146 @@ function Rail({ items, badges }) {
       background:   'var(--bg-raised)',
       boxShadow:    'inset 0 0 0 1px var(--border)',
     }}>
-      {items.map(item => {
-        const count = item.badgeKey ? badges[item.badgeKey] || 0 : 0;
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end
-            onMouseEnter={() => prefetchRoute(item.to)}
-            onFocus={() => prefetchRoute(item.to)}
-            style={{
-              position:       'relative',
-              display:        'inline-flex',
-              alignItems:     'center',
-              gap:            6,
-              padding:        '8px 16px',
-              borderRadius:   'var(--radius-pill)',
-              fontSize:       'var(--text-sm)',
-              fontWeight:     600,
-              textDecoration: 'none',
-              whiteSpace:     'nowrap',
-            }}
+      {items.map(item => (item.items
+        ? <NavGroup key={item.label} group={item} badges={badges} />
+        : <RailLink key={item.to} item={item} badges={badges} />))}
+    </div>
+  );
+}
+
+const railActive = {
+  position:     'absolute',
+  inset:        0,
+  borderRadius: 'var(--radius-pill)',
+  background:   'var(--bg-card)',
+  boxShadow:    'var(--shadow-sm)',
+};
+const railItem = {
+  position:       'relative',
+  display:        'inline-flex',
+  alignItems:     'center',
+  gap:            6,
+  padding:        '8px 16px',
+  borderRadius:   'var(--radius-pill)',
+  fontSize:       'var(--text-sm)',
+  fontWeight:     600,
+  textDecoration: 'none',
+  whiteSpace:     'nowrap',
+  cursor:         'pointer',
+};
+
+function RailLink({ item, badges }) {
+  const count = item.badgeKey ? badges[item.badgeKey] || 0 : 0;
+  return (
+    <NavLink
+      to={item.to}
+      end
+      onMouseEnter={() => prefetchRoute(item.to)}
+      onFocus={() => prefetchRoute(item.to)}
+      style={railItem}
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && (
+            <motion.span layoutId="rail-active" transition={SPRING.gentle} style={railActive} />
+          )}
+          <span style={{
+            position:   'relative',
+            color:      isActive ? 'var(--text-primary)' : 'var(--text-subtle)',
+            transition: 'color var(--duration-base) var(--ease-state)',
+          }}>
+            {item.label}
+          </span>
+          {count > 0 && <CountBadge n={count} />}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+/**
+ * A nav group (People, Teaching, ...) with a menu of its pages. Opens
+ * on hover after a short intent delay, on click, or on Enter/Space;
+ * closes on Escape, outside click, leaving it, or navigating. The
+ * sliding highlight is shared with plain links, so it moves to the
+ * group whenever one of its pages is open.
+ */
+function NavGroup({ group, badges }) {
+  const { pathname } = useLocation();
+  // Remembers the path it opened on, so navigating closes it.
+  const [openAt, setOpenAt] = useState(null);
+  const open   = openAt === pathname;
+  const ref    = useRef(null);
+  const timer  = useRef(null);
+  const active = group.items.some(i => pathname === i.to || pathname.startsWith(`${i.to}/`));
+  const count  = group.items.reduce((n, i) => n + (i.badgeKey ? badges[i.badgeKey] || 0 : 0), 0);
+
+  const show = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setOpenAt(pathname), 90); };
+  const hide = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setOpenAt(null), 160); };
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = e => { if (!ref.current?.contains(e.target)) setOpenAt(null); };
+    const onKey  = e => { if (e.key === 'Escape') setOpenAt(null); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }} onPointerEnter={e => e.pointerType === 'mouse' && show()} onPointerLeave={e => e.pointerType === 'mouse' && hide()}>
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpenAt(o => (o === pathname ? null : pathname))}
+        onKeyDown={e => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setOpenAt(pathname);
+            requestAnimationFrame(() => ref.current?.querySelector('.navmenu a')?.focus());
+          }
+        }}
+        style={{ ...railItem, background: 'transparent', border: 0, fontFamily: 'inherit' }}
+      >
+        {active && <motion.span layoutId="rail-active" transition={SPRING.gentle} style={railActive} />}
+        <span style={{ position: 'relative', color: active || open ? 'var(--text-primary)' : 'var(--text-subtle)', transition: 'color var(--duration-base) var(--ease-state)' }}>
+          {group.label}
+        </span>
+        {count > 0 && <CountBadge n={count} />}
+        <ChevronDown size={13} style={{ position: 'relative', color: 'var(--text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--duration-base) var(--ease-state)' }} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="navmenu"
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.12 } }}
+            transition={SPRING.snappy}
+            style={{ transformOrigin: 'top center' }}
           >
-            {({ isActive }) => (
-              <>
-                {isActive && (
-                  <motion.span
-                    layoutId="rail-active"
-                    transition={SPRING.gentle}
-                    style={{
-                      position:     'absolute',
-                      inset:        0,
-                      borderRadius: 'var(--radius-pill)',
-                      background:   'var(--bg-card)',
-                      boxShadow:    'var(--shadow-sm)',
-                    }}
-                  />
-                )}
-                <span style={{
-                  position:   'relative',
-                  color:      isActive ? 'var(--text-primary)' : 'var(--text-subtle)',
-                  transition: 'color var(--duration-base) var(--ease-state)',
-                }}>
-                  {item.label}
-                </span>
-                {count > 0 && <CountBadge n={count} />}
-              </>
-            )}
-          </NavLink>
-        );
-      })}
+            {group.items.map(i => {
+              const n = i.badgeKey ? badges[i.badgeKey] || 0 : 0;
+              return (
+                <NavLink key={i.to} to={i.to} end className={({ isActive }) => (isActive ? 'active' : undefined)}
+                         onMouseEnter={() => prefetchRoute(i.to)} onFocus={() => prefetchRoute(i.to)}>
+                  <span className="nm-icon"><i.icon size={15} aria-hidden="true" /></span>
+                  <span className="nm-label">
+                    {i.label}
+                    {n > 0 && <span style={{ marginLeft: 8, verticalAlign: 'middle' }}><CountBadge n={n} /></span>}
+                  </span>
+                  <span className="nm-desc">{i.desc}</span>
+                </NavLink>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -310,6 +442,15 @@ function CountBadge({ n }) {
       {n > 9 ? '9+' : n}
     </span>
   );
+}
+
+// Groups become a heading followed by their pages, numbered straight
+// through, for the full-screen menu.
+function flattenNav(items) {
+  let n = 0;
+  return items.flatMap(item => (item.items
+    ? [{ heading: item.label }, ...item.items.map(i => ({ ...i, n: ++n }))]
+    : [{ ...item, n: ++n }]));
 }
 
 // ─── Full-screen menu (under 1100px) ───────────────────────────
@@ -336,8 +477,16 @@ function FullMenu({ items, badges, user, role, onLogout }) {
         <span className="dot" /> Menu / {role}
       </p>
       <nav aria-label="Main" style={{ display: 'flex', flexDirection: 'column' }}>
-        {items.map((item, i) => {
+        {flattenNav(items).map((item, i) => {
+          if (item.heading) {
+            return (
+              <p key={`h-${item.heading}`} className="kicker" style={{ marginTop: i ? 22 : 0, marginBottom: 2 }}>
+                {item.heading}
+              </p>
+            );
+          }
           const count = item.badgeKey ? badges[item.badgeKey] || 0 : 0;
+          const grouped = items.some(it => it.items);
           return (
             <motion.div
               key={item.to}
@@ -360,12 +509,12 @@ function FullMenu({ items, badges, user, role, onLogout }) {
                 {({ isActive }) => (
                   <>
                     <span className="kicker" style={{ width: 22 }}>
-                      {String(i + 1).padStart(2, '0')}
+                      {String(item.n).padStart(2, '0')}
                     </span>
                     <span style={{
                       fontFamily:    'var(--font-display)',
                       fontWeight:    650,
-                      fontSize:      'clamp(30px, 8vw, 44px)',
+                      fontSize:      grouped ? 'clamp(22px, 6vw, 30px)' : 'clamp(30px, 8vw, 44px)',
                       letterSpacing: 'var(--tracking-display)',
                       lineHeight:    1,
                       color:         isActive ? 'var(--brand-text)' : 'var(--text-primary)',
@@ -493,8 +642,17 @@ function UserMenu({ user, role, onLogout, compact }) {
   );
 }
 
+// The theme in effect here: the console's own inside the admin console.
+function useActiveTheme() {
+  const inConsole = useUIStore(s => s.inConsole);
+  const theme     = useUIStore(s => (s.inConsole ? s.consoleTheme : s.theme));
+  const toggle    = useUIStore(s => s.toggleTheme);
+  const toggleC   = useUIStore(s => s.toggleConsoleTheme);
+  return { theme, toggleTheme: inConsole ? toggleC : toggle };
+}
+
 function ThemeRow() {
-  const { theme, toggleTheme } = useUIStore();
+  const { theme, toggleTheme } = useActiveTheme();
   const dark = theme === 'dark';
   return (
     <button
@@ -511,7 +669,7 @@ function ThemeRow() {
 }
 
 function ThemeButton() {
-  const { theme, toggleTheme } = useUIStore();
+  const { theme, toggleTheme } = useActiveTheme();
   const dark = theme === 'dark';
   return (
     <motion.button

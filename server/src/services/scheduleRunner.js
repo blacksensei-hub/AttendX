@@ -1,6 +1,8 @@
 const { ClassSchedule, Class, Session, Enrollment, User } = require('../models');
 const { Op } = require('sequelize');
 const { sendSessionOpenedEmail } = require('./emailService');
+const { blockingEventOn } = require('./calendarService');
+const { opsEmit, beat } = require('./opsFeed');
 
 // The scheduler polls every 60 seconds. For each active schedule,
 // it checks if NOW matches the scheduled day + time. If it does AND
@@ -10,6 +12,7 @@ function startScheduleRunner(io) {
   console.log('[ScheduleRunner] Recurring session scheduler started — polling every 60 seconds');
 
   setInterval(async () => {
+    beat('scheduleRunner');
     try {
       await processScheduledSlots(io);
       await sendUpcomingReminders();
@@ -24,6 +27,10 @@ async function processScheduledSlots(io) {
   const now    = new Date();
   const today  = now.getDay();                         // 0=Sun..6=Sat
   const hhmm   = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  // Holidays, breaks and exam periods marked "no sessions" in the
+  // admin calendar stop every timetabled session that day.
+  if (await blockingEventOn(now)) return;
 
   // Find active schedules where day_of_week matches today AND start_time
   // falls within the current minute (or up to 1 minute ago, to handle
@@ -58,6 +65,13 @@ async function openScheduledSession(sched, io) {
     const now    = new Date();
     const closeAt = new Date(now.getTime() + sched.duration_mins * 60 * 1000);
 
+    // A lecturer may already have opened this class by hand.
+    const alreadyOpen = await Session.findOne({ where: { class_id: sched.class_id, status: 'open' } });
+    if (alreadyOpen) {
+      await sched.update({ last_triggered: now });
+      return;
+    }
+
     const session = await Session.create({
       class_id:           sched.class_id,
       title:              `Scheduled session — ${dayName(sched.day_of_week)}`,
@@ -66,6 +80,11 @@ async function openScheduledSession(sched, io) {
       close_at:           closeAt,
       late_threshold:     sched.late_threshold,
       qr_interval:        sched.qr_interval,
+      // Scheduled sessions used to skip these, which silently turned
+      // the classroom location check off for every timetabled session.
+      geo_lat:            sched.class?.geo_lat    ?? null,
+      geo_lng:            sched.class?.geo_lng    ?? null,
+      geo_radius:         sched.class?.geo_radius ?? null,
       class_name_snapshot: sched.class?.name ?? 'Unknown class',
     });
 
@@ -73,13 +92,17 @@ async function openScheduledSession(sched, io) {
     await sched.update({ last_triggered: now });
 
     // Notify enrolled students via WebSocket
-    if (io) {
-      io.emit('session:scheduled-opened', {
-        sessionId: session.id,
-        classId:   sched.class_id,
-        className: sched.class?.name,
-      });
-    }
+    // Only this class's room hears about it (this used to go to every
+    // connected user, lecturer and student alike).
+    io?.to(`class:${sched.class_id}`).emit('session:scheduled-opened', {
+      sessionId: session.id,
+      classId:   sched.class_id,
+      className: sched.class?.name,
+    });
+    opsEmit('ops:session', {
+      type: 'opened', sessionId: session.id,
+      className: sched.class?.name ?? 'A class', code: sched.class?.code ?? null, scheduled: true,
+    });
 
     // Send email notifications to all enrolled students
     const enrollments = await Enrollment.findAll({
@@ -116,6 +139,9 @@ async function sendUpcomingReminders() {
   const in10Min = new Date(now.getTime() + 10 * 60 * 1000);
   const today   = in10Min.getDay();
   const hhmm    = `${String(in10Min.getHours()).padStart(2, '0')}:${String(in10Min.getMinutes()).padStart(2, '0')}`;
+
+  // No "starting in 10 minutes" email for a session that won't open.
+  if (await blockingEventOn(in10Min)) return;
 
   const schedules = await ClassSchedule.findAll({
     where: {

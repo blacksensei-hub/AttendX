@@ -51,6 +51,15 @@ const AdminUsers             = lazy(ROUTE_IMPORTS['/admin/users']);
 const AdminAtRisk            = lazy(ROUTE_IMPORTS['/admin/at-risk']);
 const AdminHeatmap           = lazy(ROUTE_IMPORTS['/admin/heatmap']);
 const AdminAuditLog          = lazy(ROUTE_IMPORTS['/admin/audit']);
+const AdminImportUsers       = lazy(ROUTE_IMPORTS['/admin/users/import']);
+const AdminCalendar          = lazy(ROUTE_IMPORTS['/admin/calendar']);
+const AdminAnalytics         = lazy(ROUTE_IMPORTS['/admin/analytics']);
+const AdminFraudReview       = lazy(ROUTE_IMPORTS['/admin/fraud']);
+const AdminAnnouncements     = lazy(ROUTE_IMPORTS['/admin/announcements']);
+const AdminSettings          = lazy(ROUTE_IMPORTS['/admin/settings']);
+const AdminHealth            = lazy(ROUTE_IMPORTS['/admin/health']);
+const AdminOpsWall           = lazy(ROUTE_IMPORTS['/admin/ops']);
+const InvitePage             = lazy(() => import('../pages/auth/InvitePage'));
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -104,24 +113,43 @@ const router = createBrowserRouter([
     children: [
       { path: '/login',    element: <LoginPage />    },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/invite/:token', element: <InvitePage /> },
     ],
   },
 
   // Admin routes
   {
     element: <ProtectedRoute role="admin" />,
-    children: [{
-      element: <AdminLayout />,
-      children: [
-        { path: '/admin',          element: <AdminDashboard /> },
-        { path: '/admin/users',    element: <AdminUsers />     },
-        { path: '/admin/classes',  element: <AdminClasses />   },
-        { path: '/admin/sessions', element: <AdminSessions />  },
-        { path: '/admin/at-risk',  element: <AdminAtRisk />    },
-        { path: '/admin/heatmap',  element: <AdminHeatmap />   },
-        { path: '/admin/audit',    element: <AdminAuditLog />  },
-      ],
-    }],
+    children: [
+      // The ops wall is full screen, outside the console chrome.
+      {
+        path: '/admin/ops',
+        element: (
+          <Suspense fallback={<div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />}>
+            <AdminOpsWall />
+          </Suspense>
+        ),
+      },
+      {
+        element: <AdminLayout />,
+        children: [
+          { path: '/admin',                element: <AdminDashboard />     },
+          { path: '/admin/users',          element: <AdminUsers />         },
+          { path: '/admin/users/import',   element: <AdminImportUsers />   },
+          { path: '/admin/classes',        element: <AdminClasses />       },
+          { path: '/admin/sessions',       element: <AdminSessions />      },
+          { path: '/admin/calendar',       element: <AdminCalendar />      },
+          { path: '/admin/analytics',      element: <AdminAnalytics />     },
+          { path: '/admin/at-risk',        element: <AdminAtRisk />        },
+          { path: '/admin/heatmap',        element: <AdminHeatmap />       },
+          { path: '/admin/fraud',          element: <AdminFraudReview />   },
+          { path: '/admin/audit',          element: <AdminAuditLog />      },
+          { path: '/admin/announcements',  element: <AdminAnnouncements /> },
+          { path: '/admin/settings',       element: <AdminSettings />      },
+          { path: '/admin/health',         element: <AdminHealth />        },
+        ],
+      },
+    ],
   },
 
   // Lecturer routes

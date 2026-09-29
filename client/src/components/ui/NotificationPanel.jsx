@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient }     from '@tanstack/react-query
 import { motion, AnimatePresence }                   from 'framer-motion';
 import {
   Bell, X, CheckCheck, Trash2,
-  Radio, CheckCircle, Clock,
+  Radio, CheckCircle, Clock, Megaphone, TriangleAlert, ShieldAlert,
 }                                                    from 'lucide-react';
 import { formatDistanceToNow }                       from 'date-fns';
 
@@ -44,6 +44,31 @@ const TYPE_META = {
     color:  'var(--amber)',
     bg:     'var(--amber-bg)',
     border: 'var(--amber-border)',
+  },
+  announcement: {
+    icon:   Megaphone,
+    color:  'var(--brand-text)',
+    bg:     'var(--brand-subtle)',
+    border: 'var(--brand-border)',
+  },
+  at_risk: {
+    icon:   TriangleAlert,
+    color:  'var(--amber)',
+    bg:     'var(--amber-bg)',
+    border: 'var(--amber-border)',
+  },
+  at_risk_alert: {
+    icon:   TriangleAlert,
+    color:  'var(--amber)',
+    bg:     'var(--amber-bg)',
+    border: 'var(--amber-border)',
+  },
+  // Fraud review warnings from an admin
+  security: {
+    icon:   ShieldAlert,
+    color:  'var(--red)',
+    bg:     'var(--red-bg)',
+    border: 'var(--red-border)',
   },
   default: {
     icon:   Bell,

@@ -13,6 +13,10 @@ const Appeal               = require('./Appeal');
 const AttendanceAdjustment = require('./AttendanceAdjustment');
 const ClassSchedule        = require('./ClassSchedule');
 const ImpersonationLog     = require('./ImpersonationLog');   // ← added
+const {
+  AuditEvent, InstitutionSetting, Semester, CalendarEvent,
+  ScanAttempt, FraudFlag, Announcement, AnnouncementReceipt,
+}                          = require('./AdminConsole');
 
 // ─── Associations ─────────────────────────────────────────────
 
@@ -108,6 +112,18 @@ User.hasMany(ImpersonationLog, {
 // Every model must be exported here or controllers that import from
 // '../models' will get undefined and crash with errors like
 // "Cannot read properties of undefined (reading 'create')".
+// ── Admin console ─────────────────────────────────────────────
+AuditEvent.belongsTo(User,  { foreignKey: 'actor_id',    as: 'actor' });
+ScanAttempt.belongsTo(User, { foreignKey: 'user_id',     as: 'user' });
+ScanAttempt.belongsTo(Session, { foreignKey: 'session_id', as: 'session' });
+FraudFlag.belongsTo(User,    { foreignKey: 'user_id',     as: 'user' });
+FraudFlag.belongsTo(User,    { foreignKey: 'reviewed_by', as: 'reviewer' });
+FraudFlag.belongsTo(Session, { foreignKey: 'session_id',  as: 'session' });
+FraudFlag.belongsTo(Class,   { foreignKey: 'class_id',    as: 'class' });
+Announcement.belongsTo(User, { foreignKey: 'created_by',  as: 'author' });
+Announcement.hasMany(AnnouncementReceipt, { foreignKey: 'announcement_id', as: 'receipts' });
+AnnouncementReceipt.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 module.exports = {
   sequelize, Sequelize,
   User,
@@ -121,4 +137,12 @@ module.exports = {
   AttendanceAdjustment,
   ClassSchedule,
   ImpersonationLog,            // ← added
+  AuditEvent,
+  InstitutionSetting,
+  Semester,
+  CalendarEvent,
+  ScanAttempt,
+  FraudFlag,
+  Announcement,
+  AnnouncementReceipt,
 };

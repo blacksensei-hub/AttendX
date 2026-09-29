@@ -34,6 +34,8 @@
         var s = JSON.parse(localStorage.getItem('attendx-ui') || '{}');
         var t = (s.state && s.state.theme) || 'light';
         if (s.version !== 2) t = 'light';
+        // The admin console has its own theme, dark unless changed.
+        if (location.pathname.indexOf('/admin') === 0) t = (s.state && s.state.consoleTheme) || 'dark';
         document.documentElement.className = t;
       } catch (e) {}
     </script>

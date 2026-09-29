@@ -29,7 +29,7 @@ import { useAuthStore }          from './store/authStore';
 const SPLASH_DURATION = 1400;
 
 export default function App() {
-  const theme = useUIStore(s => s.theme);
+  const theme = useUIStore(s => (s.inConsole ? s.consoleTheme : s.theme));
 
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === 'undefined') return false;

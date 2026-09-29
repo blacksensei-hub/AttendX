@@ -48,6 +48,14 @@ const User = sequelize.define('User', {
   // compared in authenticate.js on each request — bumping it ends all
   // existing sessions instantly (used when an admin resets a device).
   token_version:   { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+
+  // Accounts created by the admin's CSV import start with an invite
+  // instead of a password. Only a SHA-256 hash of the invite token is
+  // stored; the token itself lives in the emailed link.
+  invite_token_hash: { type: DataTypes.STRING(64) },
+  invite_expires_at: { type: DataTypes.DATE },
+  invited_at:        { type: DataTypes.DATE },
+  last_login_at:     { type: DataTypes.DATE },
 }, {
   tableName:   'users',
   underscored: true,
@@ -56,7 +64,7 @@ const User = sequelize.define('User', {
     // Never return the password field by default — security best practice.
     // Any query that does not explicitly use the withPassword scope will
     // automatically exclude the password column from the result.
-    attributes: { exclude: ['password'] },
+    attributes: { exclude: ['password', 'invite_token_hash'] },
   },
   scopes: {
     // Use this scope when you need to verify a password at login:

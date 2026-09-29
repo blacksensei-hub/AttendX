@@ -8,7 +8,7 @@ import Animated, {
 }                                                    from 'react-native-reanimated';
 import {
   Bell, X, CheckCheck, Trash2,
-  Radio, CheckCircle, Clock,
+  Radio, CheckCircle, Clock, Megaphone, TriangleAlert, ShieldAlert,
 }                                                    from 'lucide-react-native';
 import { formatDistanceToNow }                       from 'date-fns';
 
@@ -53,6 +53,19 @@ const TYPE_META = (t) => ({
   },
   session_closing_soon: {
     icon: Clock, color: t.colors.amber, bg: t.colors.amberBg, border: t.colors.amberBorder,
+  },
+  announcement: {
+    icon: Megaphone, color: t.colors.brandText, bg: t.colors.brandSubtle, border: t.colors.brandBorder,
+  },
+  at_risk: {
+    icon: TriangleAlert, color: t.colors.amber, bg: t.colors.amberBg, border: t.colors.amberBorder,
+  },
+  at_risk_alert: {
+    icon: TriangleAlert, color: t.colors.amber, bg: t.colors.amberBg, border: t.colors.amberBorder,
+  },
+  // Fraud review warnings from an admin
+  security: {
+    icon: ShieldAlert, color: t.colors.red, bg: t.colors.redBg, border: t.colors.redBorder,
   },
   default: {
     icon: Bell, color: t.colors.textSecondary, bg: t.colors.bgRaised, border: t.colors.border,

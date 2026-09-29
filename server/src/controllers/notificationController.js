@@ -24,6 +24,8 @@ exports.markRead = async (req, res) => {
       { read: true },
       { where: { id: req.params.id, user_id: req.user.id } }
     );
+    // Announcement read receipts follow the notification.
+    await require('../services/announcementService').markRead(req.user.id, { notificationId: req.params.id });
     return res.json(success(null, 'Marked as read'));
   } catch (err) {
     return res.status(500).json(error('Server error'));
@@ -37,6 +39,7 @@ exports.markAllRead = async (req, res) => {
       { read: true },
       { where: { user_id: req.user.id, read: false } }
     );
+    await require('../services/announcementService').markRead(req.user.id, { all: true });
     return res.json(success(null, 'All marked as read'));
   } catch (err) {
     return res.status(500).json(error('Server error'));

@@ -49,6 +49,14 @@ export const ROUTE_IMPORTS = {
   '/admin/at-risk':      () => import('../pages/admin/AtRisk'),
   '/admin/heatmap':      () => import('../pages/admin/Heatmap'),
   '/admin/audit':        () => import('../pages/admin/AuditLog'),
+  '/admin/users/import': () => import('../pages/admin/ImportUsers'),
+  '/admin/calendar':     () => import('../pages/admin/Calendar'),
+  '/admin/analytics':    () => import('../pages/admin/Analytics'),
+  '/admin/fraud':        () => import('../pages/admin/FraudReview'),
+  '/admin/announcements':() => import('../pages/admin/Announcements'),
+  '/admin/settings':     () => import('../pages/admin/Settings'),
+  '/admin/health':       () => import('../pages/admin/Health'),
+  '/admin/ops':          () => import('../pages/admin/OpsWall'),
 };
 
 // Tracks which routes have already been prefetched in this session

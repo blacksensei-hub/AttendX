@@ -3,75 +3,23 @@ const { User, Class, Session, Attendance, Enrollment } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const { Op } = require('sequelize');
 const { finalizeClose } = require('../services/sessionLifecycle');
-
-// ── System-wide dashboard stats ───────────────────────────────
-exports.getDashboardStats = async (req, res) => {
-  try {
-    const [
-      totalUsers,
-      totalLecturers,
-      totalStudents,
-      totalClasses,
-      totalSessions,
-      totalAttendance,
-      activeSessions,
-      enrollmentCount,
-      closedSessionCount,
-      presentAttendance,
-    ] = await Promise.all([
-      User.count(),
-      User.count({ where: { role: 'lecturer' } }),
-      User.count({ where: { role: 'student'  } }),
-      Class.count(),
-      Session.count(),
-      Attendance.count(),
-      Session.count({ where: { status: 'open'   } }),
-      Enrollment.count(),
-      Session.count({ where: { status: 'closed' } }),
-      // Only count present + late as "successful" attendance
-      Attendance.count({ where: { status: { [Op.in]: ['present', 'late'] } } }),
-    ]);
-
-    // ── Attendance rate ──────────────────────────────────────
-    // Meaningful metric: of all possible (student, closed-session) slots,
-    // what percentage resulted in a present or late record?
-    //
-    // total possible slots = closed sessions × avg enrolled students per class
-    // avg enrolled = total enrollments / total classes
-    //
-    // This always produces a value in [0, 100].
-    const avgEnrollmentPerClass = totalClasses > 0
-      ? enrollmentCount / totalClasses
-      : 0;
-    const totalPossibleSlots = Math.round(closedSessionCount * avgEnrollmentPerClass);
-    const attendanceRate = totalPossibleSlots > 0
-      ? Math.min(100, Math.round((presentAttendance / totalPossibleSlots) * 100))
-      : 0;
-
-    return res.json(success({
-      totalUsers,
-      totalLecturers,
-      totalStudents,
-      totalClasses,
-      totalSessions,
-      totalAttendance,
-      activeSessions,
-      attendanceRate,
-    }));
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json(error('Server error'));
-  }
-};
+const { audit } = require('../services/auditService');
 
 // ── Get all users (with pagination + search) ──────────────────
 exports.getUsers = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = '', role = '' } = req.query;
+    const { page = 1, limit = 20, search = '', role = '', status = '', department = '', id = '' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const where = {};
+    if (id) where.id = id;
     if (role) where.role = role;
+    if (department) where.department = { [Op.iLike]: department };
+    // status: active (can sign in), inactive (switched off), invited
+    // (imported, invite not yet used).
+    if (status === 'active')   { where.is_active = true; where.invite_token_hash = null; }
+    if (status === 'inactive') where.is_active = false;
+    if (status === 'invited')  where.invite_token_hash = { [Op.ne]: null };
     if (search) {
       where[Op.or] = [
         { name:  { [Op.iLike]: `%${search}%` } }, // ← was 'name'
@@ -110,6 +58,12 @@ exports.toggleUserStatus = async (req, res) => {
       return res.status(400).json(error('You cannot deactivate your own account'));
 
     await user.update({ is_active: !user.is_active });
+    await audit(req, {
+      action:  user.is_active ? 'user.activated' : 'user.deactivated',
+      target:  { type: 'user', id: user.id, label: user.email },
+      summary: `${user.is_active ? 'Activated' : 'Deactivated'} ${user.name}`,
+      changes: { is_active: [!user.is_active, user.is_active] },
+    });
 
     return res.json(success(
       { user },
@@ -133,7 +87,14 @@ exports.changeUserRole = async (req, res) => {
     if (user.id === req.user.id)
       return res.status(400).json(error('You cannot change your own role'));
 
+    const previousRole = user.role;
     await user.update({ role });
+    await audit(req, {
+      action:  'user.role_changed',
+      target:  { type: 'user', id: user.id, label: user.email },
+      summary: `Changed ${user.name} from ${previousRole} to ${role}`,
+      changes: { role: [previousRole, role] },
+    });
     return res.json(success({ user }, 'Role updated successfully'));
   } catch (err) {
     return res.status(500).json(error('Server error'));
@@ -150,6 +111,11 @@ exports.deleteUser = async (req, res) => {
       return res.status(400).json(error('You cannot delete your own account'));
 
     await user.destroy();
+    await audit(req, {
+      action:  'user.deleted',
+      target:  { type: 'user', id: user.id, label: user.email },
+      summary: `Deleted ${user.name} (${user.role})`,
+    });
     return res.json(success(null, 'User deleted'));
   } catch (err) {
     return res.status(500).json(error('Server error'));
@@ -159,12 +125,18 @@ exports.deleteUser = async (req, res) => {
 // ── Get all classes across all lecturers ──────────────────────
 exports.getClasses = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = '' } = req.query;
+    const { page = 1, limit = 20, search = '', id = '' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = search
-      ? { name: { [Op.iLike]: `%${search}%` } }
-      : {};
+    const where = {};
+    if (id) where.id = id;
+    if (search) {
+      where[Op.or] = [
+        { name:       { [Op.iLike]: `%${search}%` } },
+        { code:       { [Op.iLike]: `%${search}%` } },
+        { department: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
 
     const { count, rows } = await Class.findAndCountAll({
       where,
@@ -208,6 +180,11 @@ exports.forceCloseSession = async (req, res) => {
     await session.update({ status: 'closed', closed_at: new Date() });
     const cls = await Class.findByPk(session.class_id);
     await finalizeClose(session, { cls, io: req.app.get('io') });
+    await audit(req, {
+      action:  'session.force_closed',
+      target:  { type: 'session', id: session.id, label: session.title || session.class_name_snapshot },
+      summary: `Force-closed a live session of ${cls?.name ?? session.class_name_snapshot ?? 'a class'}`,
+    });
 
     return res.json(success({ session }, 'Session force-closed'));
   } catch (err) {

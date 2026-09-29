@@ -135,7 +135,10 @@ function startSessionScheduler(io) {
   runScheduler(io);
 
   // Then run every 30 seconds
-  setInterval(() => runScheduler(io), 30 * 1000);
+  setInterval(() => {
+    require('./opsFeed').beat('sessionScheduler');
+    runScheduler(io);
+  }, 30 * 1000);
 }
 
 module.exports = { startSessionScheduler };

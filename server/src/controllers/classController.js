@@ -79,6 +79,10 @@ exports.createClass = async (req, res) => {
     if (geo_lng && (geo_lng < -180 || geo_lng > 180))
       return res.status(400).json(error('Longitude must be between -180 and 180'));
 
+    // Radius and minimum attendance fall back to the institution's
+    // policy settings (admin console), which themselves default to 100m
+    // and 75%.
+    const policy = await require('../services/settingsService').loadAll();
     const code = generateCode();
     const cls  = await Class.create({
       name,
@@ -87,7 +91,8 @@ exports.createClass = async (req, res) => {
       location_name,
       geo_lat:     geo_lat  || null,
       geo_lng:     geo_lng  || null,
-      geo_radius:  geo_radius ?? 100,
+      geo_radius:  geo_radius ?? policy['class.default_geofence_m'],
+      attendance_threshold: policy['class.default_threshold_pct'],
       code,
       lecturer_id: req.user.id,
     });
@@ -115,6 +120,11 @@ exports.deleteClass = async (req, res) => {
     );
 
     await cls.destroy();
+    await require('../services/auditService').audit(req, {
+      action:  'class.deleted',
+      target:  { type: 'class', id: cls.id, label: `${cls.code} ${cls.name}` },
+      summary: `Deleted ${cls.name}. Its session history is kept.`,
+    });
     return res.json(success(null, 'Class deleted'));
   } catch (err) {
     console.error('DELETE CLASS ERROR:', err.message);

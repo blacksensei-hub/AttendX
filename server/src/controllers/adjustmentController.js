@@ -52,6 +52,13 @@ exports.adjustAttendance = async (req, res) => {
       reason:        reason.trim(),
     });
 
+    await require('../services/auditService').audit(req, {
+      action:  'attendance.adjusted',
+      target:  { type: 'attendance', id: attendance.id, label: session?.class_name_snapshot ?? cls.name },
+      summary: `Changed a student from ${oldStatus} to ${newStatus}: ${reason.trim()}`,
+      changes: { status: [oldStatus, newStatus], studentId: attendance.student_id, sessionId: attendance.session_id },
+    });
+
     return res.json(success(
       { attendance },
       `Attendance updated from ${oldStatus} to ${newStatus}`
@@ -115,6 +122,13 @@ exports.addAbsentAttendance = async (req, res) => {
       old_status:    'absent',
       new_status:    newStatus,
       reason:        reason.trim(),
+    });
+
+    await require('../services/auditService').audit(req, {
+      action:  'attendance.adjusted',
+      target:  { type: 'attendance', id: attendance.id, label: `Session ${sessionId}` },
+      summary: `Changed a student from absent to ${newStatus}: ${reason.trim()}`,
+      changes: { status: ['absent', newStatus], studentId, sessionId },
     });
 
     return res.json(success(

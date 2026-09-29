@@ -72,14 +72,35 @@ function buildEmailHTML(title, bodyHTML) {
 }
 
 // ─── Core send helper ─────────────────────────────────────────
+// Never throws: a failed email must not fail the action that sent it.
+// Returns true on success so batch senders can count failures, and
+// keeps running totals for the admin health page.
+const stats = { sent: 0, failed: 0, lastError: null, lastErrorAt: null };
+
 async function sendMail({ to, subject, html }) {
   try {
     await transporter.sendMail({ from: process.env.EMAIL_FROM, to, subject, html });
+    stats.sent += 1;
     console.log(`[Email] Sent "${subject}" to ${to}`);
+    return true;
   } catch (err) {
+    stats.failed += 1;
+    stats.lastError = err.message;
+    stats.lastErrorAt = new Date().toISOString();
     console.error(`[Email] Failed to send to ${to}:`, err.message);
+    return false;
   }
 }
+
+const emailStats = () => ({
+  ...stats,
+  configured: Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS),
+});
+
+// Admin-written text goes into HTML emails, so escape it first.
+const escapeHtml = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 // ─── 1. Session opened ────────────────────────────────────────
 async function sendSessionOpenedEmail({ to, studentName, className, sessionTitle }) {
@@ -308,17 +329,17 @@ async function sendAnnouncementEmail({ to, name, title, message, senderName }) {
   const emailTitle = title;
   const body = `
     <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
-      Hi <strong>${name}</strong>,
+      Hi <strong>${escapeHtml(name)}</strong>,
     </p>
     <p style="color:#374151;font-size:13px;margin:0 0 20px;color:#6b7280;">
-      Message from <strong>${senderName}</strong> via AttendX
+      Message from <strong>${escapeHtml(senderName)}</strong> via AttendX
     </p>
-    <div style="background:#f8faff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;
+    <div style="background:#f8faff;border-left:4px solid #2248FF;border-radius:0 10px 10px 0;
                 padding:16px 20px;margin-bottom:20px;color:#374151;font-size:15px;line-height:1.7;">
-      ${message.replace(/\n/g, '<br/>')}
+      ${escapeHtml(message).replace(/\n/g, '<br/>')}
     </div>
     <a href="${process.env.CLIENT_URL}"
-       style="display:inline-block;background:#7c3aed;color:#ffffff;
+       style="display:inline-block;background:#2248FF;color:#ffffff;
               text-decoration:none;padding:12px 24px;border-radius:10px;
               font-weight:600;font-size:14px;">
       Open AttendX →
@@ -327,7 +348,55 @@ async function sendAnnouncementEmail({ to, name, title, message, senderName }) {
       You received this because you are registered on AttendX.
     </p>
   `;
-  await sendMail({ to, subject: `📢 ${title}`, html: buildEmailHTML(emailTitle, body) });
+  return sendMail({ to, subject: title, html: buildEmailHTML(escapeHtml(emailTitle), body) });
+}
+
+// ─── 8. Account invite (CSV import) ───────────────────────────
+async function sendInviteEmail({ to, name, role, link, expiresAt }) {
+  const body = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+      Hi <strong>${escapeHtml(name)}</strong>,
+    </p>
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 20px;">
+      An AttendX ${escapeHtml(role)} account has been created for you. Choose a password to start using it.
+    </p>
+    <a href="${link}"
+       style="display:inline-block;background:#2248FF;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;
+              font-weight:600;font-size:14px;">
+      Set your password
+    </a>
+    <p style="color:#94a3b8;font-size:13px;margin-top:20px;">
+      This link works once and expires on ${new Date(expiresAt).toUTCString().slice(0, 16)}.
+    </p>
+  `;
+  return sendMail({ to, subject: 'Your AttendX account is ready', html: buildEmailHTML('Welcome to AttendX', body) });
+}
+
+// ─── 9. Weekly admin digest ───────────────────────────────────
+// `sections` are pre-built { heading, rows: [[label, value]] } blocks.
+async function sendDigestEmail({ to, name, periodLabel, sections }) {
+  const blocks = sections.map(sec => `
+    <h3 style="font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin:22px 0 8px;">
+      ${escapeHtml(sec.heading)}
+    </h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      ${sec.rows.map(([label, value]) => `
+        <tr>
+          <td style="padding:7px 0;border-bottom:1px solid #eef1f5;color:#374151;font-size:14px;">${escapeHtml(label)}</td>
+          <td style="padding:7px 0;border-bottom:1px solid #eef1f5;color:#0B1B3F;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(value)}</td>
+        </tr>`).join('')}
+    </table>`).join('');
+  const body = `
+    <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 4px;">Hi <strong>${escapeHtml(name)}</strong>,</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 8px;">Here is how ${escapeHtml(periodLabel)} went.</p>
+    ${blocks}
+    <a href="${process.env.CLIENT_URL}/admin"
+       style="display:inline-block;margin-top:24px;background:#0B1B3F;color:#ffffff;
+              text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">
+      Open the admin console
+    </a>`;
+  return sendMail({ to, subject: `AttendX weekly digest: ${periodLabel}`, html: buildEmailHTML('Weekly digest', body) });
 }
 
 // ─── Exports ──────────────────────────────────────────────────
@@ -339,4 +408,7 @@ module.exports = {
   sendAtRiskStudentEmail,
   sendAtRiskLecturerEmail,
   sendAnnouncementEmail,
+  sendInviteEmail,
+  sendDigestEmail,
+  emailStats,
 };

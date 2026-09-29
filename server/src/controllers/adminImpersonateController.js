@@ -99,6 +99,11 @@ exports.start = async (req, res) => {
       ip:             req.ip,
       user_agent:     req.get('user-agent') || null,
     });
+    await require('../services/auditService').audit(req, {
+      action:  'impersonation.started',
+      target:  { type: 'user', id: target.id, label: target.email },
+      summary: `Started viewing as ${target.name} (${target.role})${reason ? `: ${reason}` : ''}`,
+    });
 
     // Sign the impersonation token. It carries the TARGET user's id
     // and role (so all normal controllers behave as if the target user
@@ -177,6 +182,12 @@ exports.stop = async (req, res) => {
         { where: { id: logId } }
       );
     }
+    await require('../services/auditService').audit(req, {
+      action:  'impersonation.stopped',
+      actorId: adminId,
+      target:  { type: 'user', id: req.user.id },
+      summary: 'Stopped viewing as another user',
+    });
 
     // Look up the admin. Edge cases handled:
     //   • Admin account was deleted while impersonating — bail.

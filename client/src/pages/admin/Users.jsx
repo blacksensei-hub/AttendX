@@ -1,507 +1,314 @@
 // client/src/pages/admin/Users.jsx
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Search, UserCheck, UserX, Trash2, Eye, Shield,
-  Loader2, ChevronLeft, ChevronRight, AlertTriangle,
-  Smartphone,
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Eye, Smartphone, Trash2, UserPlus, Users as UsersIcon, Power, Copy, Send, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import {
-  listUsers, toggleUserStatus, updateUserRole,
-  deleteUser, startImpersonation, resetUserDevice,
-} from '../../services/adminService';
-import { useAuthStore }  from '../../store/authStore';
-import { useIsMobile }   from '../../hooks/useIsMobile';
 
-const ROLE_OPTIONS = [
-  { value: '',         label: 'All roles' },
-  { value: 'student',  label: 'Students'  },
+import {
+  listUsers, toggleUserStatus, updateUserRole, deleteUser, startImpersonation, resetUserDevice,
+} from '../../services/adminService';
+import { consoleApi } from '../../services/consoleService';
+import { useAuthStore } from '../../store/authStore';
+import { ConsoleHead, Panel, Sig, Empty } from '../../components/console/Panel';
+import DataTable from '../../components/console/DataTable';
+import { Drawer, ConfirmDialog } from '../../components/console/overlays';
+import { Segmented, SearchInput, Select, Field } from '../../components/console/controls';
+import { timeAgo, fmtDateTime } from '../../components/console/format';
+
+/**
+ * ═════════════════════════════════════════════════════════════════
+ * Users: every account, filterable by role and status, with bulk
+ * actions for the selection and a drawer per person for everything
+ * else (role, access, phone, "view as", invite, delete).
+ *
+ * ?focus=<id> opens that person's drawer (the command palette links
+ * here); ?status=invited lists accounts still waiting on an invite.
+ * ═════════════════════════════════════════════════════════════════
+ */
+
+const ROLES = [
+  { value: '', label: 'All' },
+  { value: 'student', label: 'Students' },
   { value: 'lecturer', label: 'Lecturers' },
-  { value: 'admin',    label: 'Admins'    },
+  { value: 'admin', label: 'Admins' },
+];
+const STATUSES = [
+  { value: '', label: 'Any status' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Deactivated' },
+  { value: 'invited', label: 'Invite pending' },
 ];
 
-const PAGE_SIZE = 20;
+const invitePending = (u) => Boolean(u.invite_expires_at);
+function statusOf(u) {
+  if (!u.is_active) return <Sig tone="bad">Deactivated</Sig>;
+  if (invitePending(u)) {
+    return new Date(u.invite_expires_at) < new Date()
+      ? <Sig tone="warn">Invite expired</Sig>
+      : <Sig tone="warn">Invite pending</Sig>;
+  }
+  return <Sig tone="live">Active</Sig>;
+}
 
-export default function AdminUsersPage() {
-  const navigate     = useNavigate();
-  const isMobile     = useIsMobile();
-  const currentUser  = useAuthStore(s => s.user);
+export default function Users() {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const me = useAuthStore(s => s.user);
   const startImpersonatingStore = useAuthStore(s => s.startImpersonating);
+  const [params, setParams] = useSearchParams();
 
-  const [users,   setUsers]   = useState([]);
-  const [total,   setTotal]   = useState(0);
-  const [search,  setSearch]  = useState('');
-  const [role,    setRole]    = useState('');
-  const [page,    setPage]    = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [busyId,  setBusyId]  = useState(null);
-  const [confirmDelete,      setConfirmDelete]      = useState(null);
-  const [confirmImpersonate, setConfirmImpersonate] = useState(null);
-  // Only mobile carries a binding — web sign-ins are unrestricted.
-  const [confirmResetDevice, setConfirmResetDevice] = useState(null);
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [role, setRole] = useState('');
+  const [status, setStatus] = useState(params.get('status') ?? '');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkRole, setBulkRole] = useState('lecturer');
+  const [busy, setBusy] = useState(false);
+  const focusId = params.get('focus');
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  // ─── Load ─────────────────────────────────────────────────
   useEffect(() => {
-    const handle = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const data = await listUsers({
-          page, limit: PAGE_SIZE,
-          search: search.trim() || undefined,
-          role:   role || undefined,
-        });
-        setUsers(data.users || data.rows || []);
-        setTotal(data.total || data.count || 0);
-      } catch (err) {
-        toast.error(err?.response?.data?.message || 'Failed to load users');
-      } finally { setLoading(false); }
-    }, 350);
-    return () => clearTimeout(handle);
-  }, [search, role, page]);
+    const t = setTimeout(() => { setDebounced(search.trim()); setPage(1); }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  useEffect(() => { setPage(1); }, [search, role]);
+  const { data, isPending } = useQuery({
+    queryKey: ['admin-users', { page, debounced, role, status }],
+    queryFn: () => listUsers({ page, limit: 25, search: debounced, role, status }),
+    placeholderData: keepPreviousData,
+  });
+  const users = data?.users ?? [];
 
-  // ─── Actions ──────────────────────────────────────────────
-  async function handleToggleStatus(user) {
-    if (user.id === currentUser?.id) { toast.error("Can't deactivate yourself"); return; }
-    setBusyId(user.id);
+  // The drawer's person: from the current page, or fetched by id.
+  const { data: focused } = useQuery({
+    queryKey: ['admin-user', focusId],
+    queryFn: () => listUsers({ id: focusId, limit: 1 }).then(r => r.users?.[0] ?? null),
+    enabled: Boolean(focusId),
+  });
+  const openUser = (u) => setParams(p => { p.set('focus', u.id); return p; }, { replace: true });
+  const closeUser = () => setParams(p => { p.delete('focus'); return p; }, { replace: true });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['admin-users'] });
+    qc.invalidateQueries({ queryKey: ['admin-user'] });
+    qc.invalidateQueries({ queryKey: ['admin-overview'] });
+  };
+
+  const bulk = async (action, extra) => {
+    setBusy(true);
     try {
-      const updated = await toggleUserStatus(user.id);
-      setUsers(rows => rows.map(u => u.id === user.id ? { ...u, ...updated } : u));
-      toast.success(updated.is_active ? 'User activated' : 'User deactivated');
-    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
-    finally { setBusyId(null); }
-  }
+      const r = await consoleApi.bulkUsers([...selected], action, extra);
+      toast.success(r.message);
+      setSelected(new Set());
+      refresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Bulk update failed');
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  async function handleChangeRole(user, newRole) {
-    if (newRole === user.role) return;
-    if (user.id === currentUser?.id) { toast.error("Can't change your own role"); return; }
-    setBusyId(user.id);
-    try {
-      const updated = await updateUserRole(user.id, newRole);
-      setUsers(rows => rows.map(u => u.id === user.id ? { ...u, ...updated } : u));
-      toast.success(`Role updated to ${newRole}`);
-    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
-    finally { setBusyId(null); }
-  }
+  const columns = [
+    { key: 'name', header: 'Name', sort: u => u.name.toLowerCase(), render: u => (
+      <span><span className="cell-main">{u.name}</span><span className="cell-sub">{u.email}</span></span>
+    ) },
+    { key: 'role', header: 'Role', sort: u => u.role, render: u => <span className={`chip${u.role === 'admin' ? ' brand' : ''}`}>{u.role}</span> },
+    { key: 'dept', header: 'ID / department', render: u => (
+      <span><span className="tabular">{u.student_id ?? '—'}</span><span className="cell-sub">{u.department ?? 'No department'}</span></span>
+    ) },
+    { key: 'phone', header: 'Phone', render: u => (u.role === 'student'
+      ? (u.bound_mobile_device_id ? <span className="c-subtle">Registered</span> : <span className="c-muted">None yet</span>)
+      : <span className="c-muted">n/a</span>) },
+    { key: 'seen', header: 'Last sign-in', sort: u => (u.last_login_at ? new Date(u.last_login_at).getTime() : 0), render: u => (
+      <span className="c-subtle" title={fmtDateTime(u.last_login_at)}>{u.last_login_at ? timeAgo(u.last_login_at) : invitePending(u) ? 'Not yet' : 'Never'}</span>
+    ) },
+    { key: 'status', header: 'Status', render: statusOf },
+  ];
 
-  async function handleDelete(user) {
-    setBusyId(user.id);
-    try {
-      await deleteUser(user.id);
-      setUsers(rows => rows.filter(u => u.id !== user.id));
-      setTotal(t => Math.max(0, t - 1));
-      toast.success('User deleted');
-    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
-    finally { setBusyId(null); setConfirmDelete(null); }
-  }
-
-  // Clears a student's phone registration so their next mobile sign-in
-  // registers a new device. Needed whenever someone legitimately changes
-  // phone — without it they're locked out of marking attendance.
-  async function handleResetDevice(user) {
-    setBusyId(user.id);
-    try {
-      await resetUserDevice(user.id);
-      setUsers(rows => rows.map(u =>
-        u.id === user.id
-          ? { ...u, bound_mobile_device_id: null, mobile_device_bound_at: null }
-          : u
-      ));
-      toast.success(`${user.name} can now sign in on a new phone`);
-    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
-    finally { setBusyId(null); setConfirmResetDevice(null); }
-  }
-
-  async function handleImpersonate(user, reason) {
-    setBusyId(user.id);
-    try {
-      const result = await startImpersonation(user.id, reason);
-      // Store signature is (targetUser, targetToken); the admin's own
-      // user and token are captured inside the store as originalUser.
-      startImpersonatingStore(result.user, result.token);
-      toast.success(`Now viewing as ${user.name}`);
-      setConfirmImpersonate(null);
-      if (user.role === 'lecturer') navigate('/lecturer');
-      else if (user.role === 'student') navigate('/student');
-      else navigate('/');
-    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
-    finally { setBusyId(null); }
-  }
-
-  const visibleUsers = useMemo(() => users || [], [users]);
+  const current = users.find(u => u.id === focusId) ?? focused ?? null;
 
   return (
-    <div style={{ padding: 0, maxWidth: 1360, margin: '0 auto', fontFamily: 'var(--font-body)' }}>
+    <div className="c-page">
+      <ConsoleHead
+        kicker="People / Users"
+        title="Users"
+        lede="Every account on AttendX. Select rows for bulk changes, or open a person for everything else."
+        actions={<Link to="/admin/users/import" className="btn-accent btn-sm"><UserPlus size={15} /> Import from CSV</Link>}
+      />
 
-      {/* Header */}
-      <header style={{ marginBottom: 'var(--space-4)' }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-          User management
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-          {total.toLocaleString()} {total === 1 ? 'user' : 'users'}
-          {role   ? ` · filtered by ${role}` : ''}
-          {search ? ` · matching "${search}"` : ''}
-        </p>
-      </header>
-
-      {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
-          <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} aria-hidden />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, email, or student ID…"
-            style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: 'var(--radius-atomic)', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
-          />
+      <Panel flush>
+        <div className="c-toolbar" style={{ padding: 14, borderBottom: '1px solid var(--border)' }}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Name, email or student ID" label="Search users" />
+          <Segmented label="Role" options={ROLES} value={role} onChange={v => { setRole(v); setPage(1); setSelected(new Set()); }} />
+          <Select label="Status" value={status} onChange={v => { setStatus(v); setPage(1); setSelected(new Set()); }} options={STATUSES} />
         </div>
-        <select
-          value={role}
-          onChange={e => setRole(e.target.value)}
-          style={{ padding: '10px 12px', borderRadius: 'var(--radius-atomic)', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer', minWidth: isMobile ? '100%' : 140, fontFamily: 'inherit' }}
-        >
-          {ROLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-        </select>
-      </div>
+        <DataTable
+          caption="Users"
+          columns={columns}
+          rows={users}
+          loading={isPending}
+          onRowClick={openUser}
+          selected={selected}
+          onSelect={setSelected}
+          page={data?.page ?? page}
+          totalPages={data?.totalPages ?? 1}
+          total={data?.total}
+          onPage={setPage}
+          empty={<Empty icon={UsersIcon} title="No one matches">Try a different search or filter.</Empty>}
+          bulk={(
+            <>
+              <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => bulk('activate')}>Activate</button>
+              <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => bulk('deactivate')}>Deactivate</button>
+              <select className="c-select" style={{ width: 'auto', padding: '6px 10px' }} value={bulkRole} onChange={e => setBulkRole(e.target.value)} aria-label="Role for selected">
+                <option value="student">Student</option>
+                <option value="lecturer">Lecturer</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => bulk('role', bulkRole)}>Set role</button>
+              <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => bulk('reset_device')}>Reset phones</button>
+              {busy && <Loader2 size={15} className="animate-spin" />}
+            </>
+          )}
+        />
+      </Panel>
 
-      {/* Content */}
-      {loading && visibleUsers.length === 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '40px 20px', justifyContent: 'center', color: 'var(--text-muted)' }}>
-          <Loader2 size={28} className="admSpin" />
-          <span>Loading users…</span>
-        </div>
-      ) : visibleUsers.length === 0 ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg, 14px)', border: '1px solid var(--border)' }}>
-          No users match these filters.
-        </div>
-      ) : isMobile ? (
-        /* ── Mobile: card list ────────────────────────────── */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {visibleUsers.map(user => (
-            <UserCard
-              key={user.id}
-              user={user}
-              isSelf={user.id === currentUser?.id}
-              isBusy={busyId === user.id}
-              onToggle={() => handleToggleStatus(user)}
-              onChangeRole={r => handleChangeRole(user, r)}
-              onDelete={() => setConfirmDelete(user)}
-              onImpersonate={() => setConfirmImpersonate(user)}
-              onResetDevice={() => setConfirmResetDevice(user)}
-            />
-          ))}
-        </div>
-      ) : (
-        /* ── Desktop: table ───────────────────────────────── */
-        <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg, 14px)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr>
-                {['Name', 'Email', 'Role', 'Status', ''].map(h => (
-                  <th key={h} style={{ textAlign: h === '' ? 'right' : 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', background: 'var(--bg-raised)', borderBottom: '1px solid var(--border)' }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleUsers.map(user => {
-                const isSelf  = user.id === currentUser?.id;
-                const isBusy  = busyId === user.id;
-                const canImp  = user.role !== 'admin' && user.is_active && !isSelf;
-                const isMobileBound = Boolean(user.bound_mobile_device_id);
-                return (
-                  <tr key={user.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--brand)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-                          {(user.name || '?').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {user.name}
-                            {isMobileBound && <DeviceLockBadge />}
-                          </div>
-                          {user.student_id && <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{user.student_id}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 16px', color: 'var(--text-primary)' }}>{user.email}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <select
-                        value={user.role}
-                        disabled={isBusy || isSelf}
-                        onChange={e => handleChangeRole(user, e.target.value)}
-                        style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13, cursor: isSelf ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-                      >
-                        <option value="student">Student</option>
-                        <option value="lecturer">Lecturer</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600, background: user.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.16)', color: user.is_active ? '#059669' : 'var(--text-muted)' }}>
-                        {user.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        {/* Only meaningful for accounts with a phone registered */}
-                        <IconBtn
-                          disabled={!isMobileBound || isBusy}
-                          onClick={() => setConfirmResetDevice(user)}
-                          title={isMobileBound ? 'Reset phone registration' : 'No phone registered'}
-                          icon={Smartphone}
-                        />
-                        <IconBtn disabled={!canImp || isBusy} onClick={() => setConfirmImpersonate(user)} title={canImp ? 'View as' : 'Cannot impersonate'} icon={Eye} />
-                        <IconBtn disabled={isSelf || isBusy} onClick={() => handleToggleStatus(user)} title={user.is_active ? 'Deactivate' : 'Activate'} icon={user.is_active ? UserX : UserCheck} />
-                        <IconBtn disabled={isSelf || isBusy} onClick={() => setConfirmDelete(user)} title="Delete" icon={Trash2} danger />
-                        {isBusy && <Loader2 size={16} className="admSpin" />}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Pagination */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'var(--space-4)' }}>
-        <button type="button" disabled={page <= 1 || loading} onClick={() => setPage(p => Math.max(1, p - 1))} style={pageBtnStyle(page > 1 && !loading)}>
-          <ChevronLeft size={16} /> {isMobile ? '' : 'Previous'}
-        </button>
-        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Page {page} of {totalPages}</span>
-        <button type="button" disabled={page >= totalPages || loading} onClick={() => setPage(p => Math.min(totalPages, p + 1))} style={pageBtnStyle(page < totalPages && !loading)}>
-          {isMobile ? '' : 'Next'} <ChevronRight size={16} />
-        </button>
-      </div>
-
-      {/* Modals */}
-      <AnimatePresence>
-        {confirmDelete && (
-          <ConfirmModal
-            icon={<Trash2 size={22} />} tone="danger"
-            title="Delete this user?"
-            message={<>This permanently removes <strong>{confirmDelete.name}</strong> and all related records. This cannot be undone.</>}
-            confirmLabel="Delete user"
-            onConfirm={() => handleDelete(confirmDelete)}
-            onCancel={() => setConfirmDelete(null)}
-            loading={busyId === confirmDelete.id}
-          />
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {confirmResetDevice && (
-          <ConfirmModal
-            icon={<Smartphone size={22} />} tone="brand"
-            title="Reset phone registration?"
-            message={<>
-              <strong>{confirmResetDevice.name}</strong>'s AttendX app is currently registered to
-              one phone. Resetting lets them sign in on a new device — whichever phone they use
-              next becomes their registered one. Website access is unaffected.
-            </>}
-            confirmLabel="Reset phone"
-            onConfirm={() => handleResetDevice(confirmResetDevice)}
-            onCancel={() => setConfirmResetDevice(null)}
-            loading={busyId === confirmResetDevice.id}
-          />
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {confirmImpersonate && (
-          <ImpersonateModal
-            user={confirmImpersonate}
-            loading={busyId === confirmImpersonate.id}
-            onConfirm={reason => handleImpersonate(confirmImpersonate, reason)}
-            onCancel={() => setConfirmImpersonate(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      <style>{`.admSpin{animation:admSpinK 0.9s linear infinite}@keyframes admSpinK{to{transform:rotate(360deg)}}`}</style>
+      <UserDrawer
+        user={current}
+        open={Boolean(focusId && current)}
+        onClose={closeUser}
+        isSelf={current?.id === me?.id}
+        onChanged={refresh}
+        onViewAs={async (u, reason) => {
+          const result = await startImpersonation(u.id, reason);
+          startImpersonatingStore(result.user, result.token);
+          toast.success(`Now viewing as ${u.name}`);
+          navigate(u.role === 'lecturer' ? '/lecturer' : u.role === 'student' ? '/student' : '/');
+        }}
+      />
     </div>
   );
 }
 
-// ─── Device lock badge ────────────────────────────────────────
-function DeviceLockBadge() {
-  return (
-    <span
-      title="AttendX app registered to one phone"
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 3,
-        padding: '1px 7px', borderRadius: 99,
-        fontSize: 10, fontWeight: 700,
-        background: 'var(--brand-subtle)',
-        color: 'var(--brand-text)',
-        border: '1px solid var(--brand-border)',
-      }}
-    >
-      <Smartphone size={9} />
-      Phone
-    </span>
-  );
-}
-
-// ─── Mobile user card ─────────────────────────────────────────
-function UserCard({ user, isSelf, isBusy, onToggle, onChangeRole, onDelete, onImpersonate, onResetDevice }) {
-  const canImp = user.role !== 'admin' && user.is_active && !isSelf;
-  const isMobileBound = Boolean(user.bound_mobile_device_id);
-  return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-molecular)', padding: 'var(--space-3)' }}>
-      {/* Top row: avatar + name + status */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--brand)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
-          {(user.name || '?').charAt(0).toUpperCase()}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
-            {isMobileBound && <DeviceLockBadge />}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
-          {user.student_id && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{user.student_id}</div>}
-        </div>
-        <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600, background: user.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.16)', color: user.is_active ? '#059669' : 'var(--text-muted)' }}>
-          {user.is_active ? 'Active' : 'Inactive'}
-        </span>
-      </div>
-
-      {/* Bottom row: role select + actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <select
-          value={user.role}
-          disabled={isBusy || isSelf}
-          onChange={e => onChangeRole(e.target.value)}
-          style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-atomic)', border: '1px solid var(--border)', background: 'var(--bg-raised)', color: 'var(--text-primary)', fontSize: 13, cursor: isSelf ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-        >
-          <option value="student">Student</option>
-          <option value="lecturer">Lecturer</option>
-          <option value="admin">Admin</option>
-        </select>
-
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <IconBtn disabled={!isMobileBound || isBusy} onClick={onResetDevice} title={isMobileBound ? 'Reset phone' : 'No phone registered'} icon={Smartphone} />
-          <IconBtn disabled={!canImp || isBusy} onClick={onImpersonate} title={canImp ? 'View as' : 'Cannot'} icon={Eye} />
-          <IconBtn disabled={isSelf || isBusy} onClick={onToggle} title={user.is_active ? 'Deactivate' : 'Activate'} icon={user.is_active ? UserX : UserCheck} />
-          <IconBtn disabled={isSelf || isBusy} onClick={onDelete} title="Delete" icon={Trash2} danger />
-          {isBusy && <Loader2 size={16} className="admSpin" />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Icon button ──────────────────────────────────────────────
-function IconBtn({ icon: Icon, onClick, disabled, title, danger }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={title}
-      style={{
-        width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        borderRadius: 8,
-        border: danger && !disabled ? '1px solid rgba(220,38,38,0.3)' : '1px solid var(--border)',
-        background: 'var(--bg-card)',
-        color: disabled ? 'var(--text-disabled)' : danger ? 'var(--red)' : 'var(--text-primary)',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      <Icon size={15} />
-    </button>
-  );
-}
-
-// ─── Confirm modal ────────────────────────────────────────────
-function ConfirmModal({ icon, tone, title, message, confirmLabel, onConfirm, onCancel, loading }) {
-  const accent = tone === 'danger' ? 'var(--red)' : 'var(--brand)';
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      style={{ position: 'fixed', inset: 0, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
-      onClick={loading ? undefined : onCancel}
-    >
-      <motion.div initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 16, opacity: 0 }}
-        style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-molecular)', padding: 'var(--space-4)', maxWidth: 420, width: '100%', boxShadow: 'var(--shadow-lg)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: `${accent}1a`, color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>{icon}</div>
-        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
-        <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{message}</p>
-        <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} disabled={loading} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" onClick={onConfirm} disabled={loading} style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: accent, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
-            {loading ? <Loader2 size={16} className="admSpin" /> : confirmLabel}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ─── Impersonate modal ────────────────────────────────────────
-function ImpersonateModal({ user, loading, onConfirm, onCancel }) {
+function UserDrawer({ user, open, onClose, isSelf, onChanged, onViewAs }) {
+  const [role, setRole] = useState(user?.role ?? 'student');
   const [reason, setReason] = useState('');
-  const valid = reason.trim().length >= 5;
+  const [working, setWorking] = useState(null);
+  const [confirm, setConfirm] = useState(null);   // 'delete' | 'reset'
+  const [link, setLink] = useState(null);
+
+  // A different person resets the drawer's local state.
+  const [shownId, setShownId] = useState(user?.id);
+  if (user && user.id !== shownId) {
+    setShownId(user.id);
+    setRole(user.role);
+    setReason('');
+    setLink(null);
+  }
+
+  const act = async (name, fn, success) => {
+    setWorking(name);
+    try {
+      const r = await fn();
+      if (success) toast.success(typeof success === 'function' ? success(r) : success);
+      onChanged();
+      return r;
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'That did not work');
+      return null;
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  if (!user) return null;
+  const pending = invitePending(user);
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      style={{ position: 'fixed', inset: 0, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
-      onClick={loading ? undefined : onCancel}
-    >
-      <motion.div initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 16, opacity: 0 }}
-        style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-molecular)', padding: 'var(--space-4)', maxWidth: 420, width: '100%', boxShadow: 'var(--shadow-lg)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(220,38,38,0.1)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-          <Shield size={22} />
-        </div>
-        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>View as {user.name}?</h3>
-        <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          You'll see AttendX through this user's account. Click "Stop impersonating" in the red banner to return. This action is logged.
-        </p>
-        <div style={{ marginTop: 16 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>Reason (required)</label>
-          <textarea
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            placeholder="e.g. Investigating a reported attendance bug"
-            rows={3}
-            disabled={loading}
-            style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)', color: 'var(--text-primary)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
-          />
-          <div style={{ marginTop: 4, fontSize: 12, color: valid ? 'var(--green)' : 'var(--text-muted)' }}>
-            {valid ? 'Looks good.' : 'At least 5 characters.'}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} disabled={loading} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" onClick={() => onConfirm(reason.trim())} disabled={loading || !valid}
-            style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: 'var(--red)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: (loading || !valid) ? 'not-allowed' : 'pointer', opacity: (loading || !valid) ? 0.55 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}
-          >
-            {loading ? <Loader2 size={16} className="admSpin" /> : <><Eye size={14} /> Start viewing</>}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
+    <>
+      <Drawer open={open} onClose={onClose} label={user.role} title={user.name}
+        footer={!isSelf && (
+          <button type="button" className="btn-danger btn-sm" onClick={() => setConfirm('delete')}><Trash2 size={14} /> Delete account</button>
+        )}>
+        <dl className="dl">
+          <dt>Email</dt><dd>{user.email}</dd>
+          {user.student_id && (<><dt>Student ID</dt><dd className="tabular">{user.student_id}</dd></>)}
+          <dt>Department</dt><dd>{user.department ?? '—'}</dd>
+          <dt>Status</dt><dd>{statusOf(user)}</dd>
+          <dt>Joined</dt><dd>{fmtDateTime(user.createdAt)}</dd>
+          <dt>Last sign-in</dt><dd>{user.last_login_at ? fmtDateTime(user.last_login_at) : 'Never'}</dd>
+          {user.role === 'student' && (<><dt>Phone</dt><dd>{user.bound_mobile_device_id ? `Registered ${timeAgo(user.mobile_device_bound_at)}` : 'Not registered yet'}</dd></>)}
+        </dl>
+
+        {isSelf ? (
+          <p className="c-muted" style={{ fontSize: 13 }}>This is your own account. Role and access changes have to come from another admin.</p>
+        ) : (
+          <>
+            <Field label="Role">
+              <div className="c-actions">
+                <select className="c-select" style={{ width: 'auto' }} value={role} onChange={e => setRole(e.target.value)}>
+                  <option value="student">Student</option>
+                  <option value="lecturer">Lecturer</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button type="button" className="btn-ghost btn-sm" disabled={role === user.role || working === 'role'}
+                        onClick={() => act('role', () => updateUserRole(user.id, role), `Role set to ${role}`)}>Save role</button>
+              </div>
+            </Field>
+
+            <div className="c-actions">
+              <button type="button" className="btn-ghost btn-sm" disabled={working === 'toggle'}
+                      onClick={() => act('toggle', () => toggleUserStatus(user.id), user.is_active ? 'Account deactivated' : 'Account activated')}>
+                <Power size={14} /> {user.is_active ? 'Deactivate' : 'Activate'}
+              </button>
+              {user.role === 'student' && user.bound_mobile_device_id && (
+                <button type="button" className="btn-ghost btn-sm" onClick={() => setConfirm('reset')}><Smartphone size={14} /> Reset phone</button>
+              )}
+            </div>
+
+            {pending && (
+              <Panel label="Invite" title={new Date(user.invite_expires_at) < new Date() ? 'The invite link has expired' : 'Waiting for them to set a password'}>
+                <div className="c-actions">
+                  <button type="button" className="btn-ghost btn-sm" disabled={working === 'invite'}
+                          onClick={async () => { const r = await act('invite', () => consoleApi.resendInvite(user.id), r2 => r2.message); if (r) setLink(r.inviteLink); }}>
+                    <Send size={14} /> Send a new invite
+                  </button>
+                  {link && (
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(link).then(() => toast.success('Invite link copied'))}>
+                      <Copy size={14} /> Copy link
+                    </button>
+                  )}
+                </div>
+                {link && <p className="c-muted" style={{ fontSize: 12, marginTop: 10, overflowWrap: 'anywhere' }}>{link}</p>}
+              </Panel>
+            )}
+
+            {user.role !== 'admin' && user.is_active && !pending && (
+              <Panel label="View as" title={`See AttendX as ${user.name.split(' ')[0]} does`}>
+                <p className="c-muted" style={{ fontSize: 13, marginBottom: 12 }}>Everything you do is recorded in the audit trail against your own account.</p>
+                <Field label="Reason (optional)">
+                  <input className="c-input" value={reason} maxLength={500} onChange={e => setReason(e.target.value)} placeholder="e.g. Checking an attendance dispute" />
+                </Field>
+                <button type="button" className="btn-accent btn-sm" style={{ marginTop: 12 }} disabled={working === 'view'}
+                        onClick={() => act('view', () => onViewAs(user, reason.trim() || undefined))}>
+                  <Eye size={14} /> View as {user.name.split(' ')[0]}
+                </button>
+              </Panel>
+            )}
+          </>
+        )}
+      </Drawer>
+
+      <ConfirmDialog open={confirm === 'delete'} onClose={() => setConfirm(null)} danger busy={working === 'delete'}
+        title={`Delete ${user.name}?`} confirmLabel="Delete account"
+        onConfirm={async () => { const r = await act('delete', () => deleteUser(user.id), 'Account deleted'); setConfirm(null); if (r) onClose(); }}>
+        This permanently removes the account and its attendance records. It cannot be undone. Deactivating keeps the history instead.
+      </ConfirmDialog>
+      <ConfirmDialog open={confirm === 'reset'} onClose={() => setConfirm(null)} busy={working === 'reset'}
+        title={`Reset ${user.name.split(' ')[0]}'s phone?`} confirmLabel="Reset phone"
+        onConfirm={async () => { await act('reset', () => resetUserDevice(user.id), `${user.name.split(' ')[0]} can sign in on a new phone`); setConfirm(null); }}>
+        They are signed out everywhere, and the next phone they sign in on becomes their registered one. Frequent resets are flagged for fraud review.
+      </ConfirmDialog>
+    </>
   );
 }
-
-// ─── Helpers ──────────────────────────────────────────────────
-const pageBtnStyle = (enabled) => ({
-  display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '8px 14px', borderRadius: 'var(--radius-atomic)',
-  border: '1px solid var(--border)',
-  background: enabled ? 'var(--bg-card)' : 'var(--bg-raised)',
-  color: enabled ? 'var(--text-primary)' : 'var(--text-muted)',
-  cursor: enabled ? 'pointer' : 'not-allowed', fontSize: 14, fontWeight: 500,
-});

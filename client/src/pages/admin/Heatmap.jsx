@@ -10,6 +10,8 @@ import { Loader2, RefreshCw, Radio, Building2, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getHeatmapData } from '../../services/adminService';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { ConsoleHead } from '../../components/console/Panel';
+import { Segmented } from '../../components/console/controls';
 
 // Fix Leaflet broken icon paths with Vite
 delete L.Icon.Default.prototype._getIconUrl;
@@ -125,53 +127,24 @@ export default function AdminHeatmapPage() {
       padding:       isMobile ? '0' : '0',
     }}>
 
-      {/* ── Header ──────────────────────────────────────────── */}
-      <div style={{
-        display:        'flex',
-        alignItems:     isMobile ? 'flex-start' : 'center',
-        justifyContent: 'space-between',
-        flexWrap:       'wrap',
-        gap:            10,
-        flexShrink:     0,
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 'clamp(34px, 4.4vw, 60px)', fontWeight: 650, letterSpacing: '-0.038em', lineHeight: 0.98, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-            Live campus heatmap
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-            {data?.totals?.activeSessions || 0} active sessions
-            {' · '}{data?.totals?.liveAttendees || 0} live attendees
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Campus toggle */}
-          <div style={{ display: 'flex', borderRadius: 'var(--radius-atomic)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-            {['both', 'tesano', 'abeka'].map(v => (
-              <button key={v} type="button" onClick={() => setView(v)}
-                style={{
-                  padding: isMobile ? '7px 10px' : '8px 14px',
-                  background: view === v ? 'var(--brand)' : 'var(--bg-card)',
-                  color: view === v ? '#ffffff' : 'var(--text-primary)',
-                  border: 'none', fontSize: isMobile ? 12 : 13,
-                  fontWeight: view === v ? 600 : 400,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }}
-              >
-                {v === 'both' ? (isMobile ? 'Both' : 'Both campuses') :
-                 v === 'tesano' ? 'Tesano' : 'Abeka'}
-              </button>
-            ))}
-          </div>
-
-          <button type="button" onClick={() => loadData(false)} disabled={refreshing}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 'var(--radius-atomic)', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            {refreshing ? <Loader2 size={15} className="hmSpin" /> : <RefreshCw size={15} />}
-            {!isMobile && 'Refresh'}
-          </button>
-        </div>
-      </div>
+      <ConsoleHead
+        kicker="Insight / Heatmap"
+        title="Campus heatmap"
+        lede={`${data?.totals?.activeSessions || 0} active session${data?.totals?.activeSessions === 1 ? '' : 's'} · ${data?.totals?.liveAttendees || 0} people marked so far`}
+        actions={(
+          <>
+            <Segmented label="Campus" value={view} onChange={setView} options={[
+              { value: 'both', label: isMobile ? 'Both' : 'Both campuses' },
+              { value: 'tesano', label: 'Tesano' },
+              { value: 'abeka', label: 'Abeka' },
+            ]} />
+            <button type="button" className="btn-ghost btn-sm" onClick={() => loadData(false)} disabled={refreshing}>
+              {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {!isMobile && 'Refresh'}
+            </button>
+          </>
+        )}
+      />
 
       {/* ── Campus summary cards (mobile only) ──────────────── */}
       {isMobile && (

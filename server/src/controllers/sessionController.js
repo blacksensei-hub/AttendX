@@ -40,11 +40,13 @@ exports.openSession = async (req, res) => {
       ? new Date(Date.now() + close_after * 60 * 1000)
       : null;
 
+    // Unset values follow the institution's policy (admin console).
+    const policy = await require('../services/settingsService').loadAll();
     const session = await Session.create({
       class_id:            classId,
       title:               title || null,
-      late_threshold:      late_threshold ?? 15,
-      qr_interval:         qr_interval    ?? 5,
+      late_threshold:      late_threshold ?? policy['session.late_threshold_min'],
+      qr_interval:         qr_interval    ?? policy['session.qr_interval_sec'],
       close_at:            closeAt,
       geo_lat:             cls.geo_lat    ?? null,
       geo_lng:             cls.geo_lng    ?? null,
@@ -66,6 +68,9 @@ exports.openSession = async (req, res) => {
       sessionId: session.id,
       className: cls.name,
       title:     session.title,
+    });
+    require('../services/opsFeed').opsEmit('ops:session', {
+      type: 'opened', sessionId: session.id, className: cls.name, code: cls.code,
     });
 
     // Fetch enrolled students for notifications + emails

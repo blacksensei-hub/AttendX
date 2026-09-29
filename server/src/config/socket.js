@@ -48,6 +48,11 @@ function initSocket(httpServer) {
     // or class view — a revoked session must be catchable anywhere.
     socket.join(`user:${socket.user.id}`);
 
+    // Admins hear the live operations feed (services/opsFeed.js). During
+    // "view as" the token's role is the viewed user's, so an admin
+    // impersonating a student does not get it.
+    if (socket.user.role === 'admin') socket.join('admin:ops');
+
     // Join a session room. The room carries every scan in real time
     // (names, emails, student IDs, proxy flags), so only the lecturer
     // who owns the session, or an admin, may join it.

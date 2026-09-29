@@ -3,6 +3,8 @@ const { validateToken }                   = require('../services/qrService');
 const { isWithinGeofence, isSuspiciousCoordinate } = require('../services/geoService');
 const { success, error }                  = require('../utils/apiResponse');
 const { Op }                              = require('sequelize');
+const { recordAttempt, flagProxyDevice }  = require('../services/fraudService');
+const { opsEmit }                         = require('../services/opsFeed');
 
 // ─── Proxy-attendance detection threshold ─────────────────────
 // How many DISTINCT students must mark attendance from the same physical
@@ -79,8 +81,16 @@ exports.markAttendance = async (req, res) => {
     //    belongs to this specific session, and has not yet expired.
     //    This is the core anti-proxy mechanism — a screenshot of an
     //    old token will fail here because tokens expire every few seconds.
+    // Refused scans are recorded for the admin's fraud review (never
+    // awaited: the student gets their answer without waiting on it).
+    const refuse = (reason, extra = {}) => recordAttempt({
+      userId: studentId, sessionId, classId: session.class_id, reason,
+      deviceId: deviceId ?? null, ip: req.ip, lat: latitude, lng: longitude, ...extra,
+    });
+
     const qrResult = await validateToken(qrToken, sessionId);
     if (!qrResult.valid) {
+      refuse(qrResult.expiredMsAgo !== undefined ? 'expired_token' : 'invalid_token');
       if (qrResult.expiredMsAgo !== undefined) {
         // Both look identical to the student ("expired") but they have
         // different causes: expiredMsAgo close to 0 means the token was
@@ -100,10 +110,12 @@ exports.markAttendance = async (req, res) => {
     //    On Android, expo-location sets loc.mocked = true when a GPS
     //    spoofing app is active. We trust this flag and block the attempt
     //    outright with a clear explanation to the student.
-    if (isMockGps)
+    if (isMockGps) {
+      refuse('mock_gps');
       return res.status(400).json(error(
         'Mock location detected. Please disable GPS spoofing apps.'
       ));
+    }
 
     // 6. Sanity-check the coordinates before using them for anything.
     //    Web submissions intentionally send latitude=0 and longitude=0
@@ -111,8 +123,10 @@ exports.markAttendance = async (req, res) => {
     //    coordinates were provided. The check rejects nonsensical values
     //    like lat=999 or the famous "null island" at exactly 0,0.
     if (latitude && longitude) {
-      if (isSuspiciousCoordinate(latitude, longitude))
+      if (isSuspiciousCoordinate(latitude, longitude)) {
+        refuse('bad_coordinates');
         return res.status(400).json(error('Invalid GPS coordinates received.'));
+      }
     }
 
     // 7. Geofence validation.
@@ -130,6 +144,7 @@ exports.markAttendance = async (req, res) => {
         radiusMeters: session.geo_radius ?? 100,
       });
       if (!geoCheck.within) {
+        refuse('out_of_geofence', { distance: geoCheck.distance });
         return res.status(400).json(error(
           `You are outside the allowed area (${Math.round(geoCheck.distance)}m away).`
         ));
@@ -199,6 +214,10 @@ exports.markAttendance = async (req, res) => {
       status,
       marked_at:         attendance.marked_at,
     });
+    opsEmit('ops:scan', {
+      sessionId, status,
+      className: session.class_name_snapshot || session.class?.name || 'A class',
+    });
 
     // 11b. Proxy-attendance detection — FLAG, never block.
     //
@@ -232,6 +251,13 @@ exports.markAttendance = async (req, res) => {
             `[ProxyFlag] session=${sessionId} device=${deviceId} ` +
             `students=${distinctStudentIds.length}`
           );
+
+          // Persist it for the admin's review queue as well: the live
+          // alert below vanishes when the lecturer closes the page.
+          flagProxyDevice({
+            sessionId, classId: session.class_id, deviceId,
+            students: flagged.map(u => ({ id: u.id, name: u.name, studentId_display: u.student_id ?? '' })),
+          });
 
           io?.to(`session:${sessionId}`).emit('attendance:proxy_flag', {
             sessionId,

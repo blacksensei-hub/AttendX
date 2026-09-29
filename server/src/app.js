@@ -214,6 +214,13 @@ async function start() {
       // multiple times within the same minute window.
       const { startScheduleRunner } = require('./services/scheduleRunner');
       startScheduleRunner(io);
+
+      // ── Admin console ───────────────────────────────────────────
+      // Live operations feed, scheduled announcements (checked every
+      // minute) and the weekly admin digest (checked every 5 minutes).
+      require('./services/opsFeed').setIo(io);
+      require('./services/announcementService').startAnnouncementPoller(io);
+      require('./services/digestService').startDigestScheduler();
     });
 
   } catch (err) {

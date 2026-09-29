@@ -44,7 +44,11 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm({ resolver: zodResolver(schema) });
+  } = useForm({
+    resolver: zodResolver(schema),
+    // Arriving from an accepted invite, the email is already known.
+    defaultValues: { email: location.state?.email ?? '' },
+  });
 
   const onSubmit = async ({ email, password }) => {
     try {

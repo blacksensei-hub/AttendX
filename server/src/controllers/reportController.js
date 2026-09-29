@@ -523,6 +523,11 @@ exports.deleteSessionReport = async (req, res) => {
 
     await Attendance.destroy({ where: { session_id: sessionId } });
     await session.destroy();
+    await require('../services/auditService').audit(req, {
+      action:  'session.report_deleted',
+      target:  { type: 'session', id: session.id, label: session.title || session.class_name_snapshot },
+      summary: `Deleted the report and attendance for a session of ${session.class_name_snapshot ?? 'a class'}`,
+    });
 
     return res.json(success(null, 'Session report deleted'));
   } catch (err) {

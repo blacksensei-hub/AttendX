@@ -1,6 +1,6 @@
 // client/src/pages/lecturer/SessionRosterPage.jsx
 import { useState }                                  from 'react';
-import { useParams, useNavigate }                    from 'react-router-dom';
+import { useParams, useNavigate, Link }              from 'react-router-dom';
 import { useQuery }                                  from '@tanstack/react-query';
 import { motion, AnimatePresence }                   from 'framer-motion';
 import { format }                                    from 'date-fns';
@@ -31,7 +31,10 @@ export default function SessionRosterPage() {
 
   const present = roster.filter(r => r.status === 'present').length;
   const late    = roster.filter(r => r.status === 'late').length;
+  const excused = roster.filter(r => r.status === 'excused').length;
   const absent  = roster.filter(r => r.status === 'absent').length;
+  // Teaching assistants see the register but can't change it.
+  const canEdit = rosterData?.canEdit !== false;
 
   const { data: auditData, refetch: refetchAudit } = useQuery({
     queryKey: ['session-audit', sessionId],
@@ -99,9 +102,10 @@ export default function SessionRosterPage() {
       </div>
 
       {/* Summary stats */}
-      <AnimatedList style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+      <AnimatedList style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
         <StatBlock label="Present" count={present} color="var(--green)" bg="var(--green-bg)" border="var(--green-border)" />
         <StatBlock label="Late"    count={late}    color="var(--amber)" bg="var(--amber-bg)" border="var(--amber-border)" />
+        <StatBlock label="Excused" count={excused} color="var(--violet)" bg="var(--violet-bg)" border="var(--violet-border)" />
         <StatBlock label="Absent"  count={absent}  color="var(--red)"   bg="var(--red-bg)"   border="var(--red-border)"   />
       </AnimatedList>
 
@@ -172,7 +176,8 @@ export default function SessionRosterPage() {
                 row={row}
                 isLast={i === roster.length - 1}
                 isMobile={isMobile}
-                onEdit={() => setAdjusting(row)}
+                classId={session.classId}
+                onEdit={canEdit ? () => setAdjusting(row) : null}
               />
             ))}
           </AnimatePresence>
@@ -254,7 +259,10 @@ function AuditEntry({ entry, isLast }) {
 }
 
 // ─── Roster row ────────────────────────────────────────────────
-function RosterRow({ row, isLast, isMobile, onEdit }) {
+function RosterRow({ row, isLast, isMobile, onEdit, classId }) {
+  const name = classId
+    ? <Link to={`/lecturer/classes/${classId}/students/${row.studentId}`} style={{ color: 'inherit', textDecoration: 'none' }} title="Their register for this class">{row.studentName}</Link>
+    : row.studentName;
   if (isMobile) {
     // Card layout on mobile — all info visible without squishing
     return (
@@ -269,7 +277,7 @@ function RosterRow({ row, isLast, isMobile, onEdit }) {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {row.studentName}
+                {name}
               </p>
               {row.wasAdjusted && (
                 <span style={{ background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid var(--amber-border)', borderRadius: 'var(--radius-pill)', fontSize: '9px', fontWeight: 700, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
@@ -291,14 +299,14 @@ function RosterRow({ row, isLast, isMobile, onEdit }) {
           <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>
             {row.markedAt ? format(new Date(row.markedAt), 'HH:mm:ss') : 'Not marked'}
           </p>
-          <motion.button
+          {onEdit && <motion.button
             whileTap={TAP.button}
             onClick={onEdit}
             style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', background: 'var(--bg-raised)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 'var(--radius-atomic)', fontSize: 'var(--text-xs)', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
           >
             <Edit2 size={11} />
             Edit
-          </motion.button>
+          </motion.button>}
         </div>
       </motion.div>
     );
@@ -317,7 +325,7 @@ function RosterRow({ row, isLast, isMobile, onEdit }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 'var(--text-sm)' }}>
-            {row.studentName}
+            {name}
           </p>
           {row.wasAdjusted && (
             <span style={{ background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid var(--amber-border)', borderRadius: 'var(--radius-pill)', fontSize: '9px', fontWeight: 700, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -341,7 +349,7 @@ function RosterRow({ row, isLast, isMobile, onEdit }) {
 
       <StatusPill status={row.status} showSweep={false} />
 
-      <motion.button
+      {onEdit ? <motion.button
         whileTap={TAP.button} whileHover={{ y: -1 }} transition={SPRING.snappy}
         onClick={onEdit}
         style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--bg-raised)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 'var(--radius-atomic)', fontSize: 'var(--text-xs)', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)', transition: `all ${DURATION.base}ms ${EASE.state}` }}
@@ -350,7 +358,7 @@ function RosterRow({ row, isLast, isMobile, onEdit }) {
       >
         <Edit2 size={12} />
         Edit
-      </motion.button>
+      </motion.button> : <span />}
     </motion.div>
   );
 }

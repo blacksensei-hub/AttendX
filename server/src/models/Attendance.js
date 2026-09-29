@@ -5,7 +5,9 @@ const Attendance = sequelize.define('Attendance', {
   id:            { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   session_id:    { type: DataTypes.UUID, allowNull: false },
   student_id:    { type: DataTypes.UUID, allowNull: false },
-  status:        { type: DataTypes.ENUM('present','late','absent'), defaultValue: 'present' },
+  // 'excused' counts towards the attendance minimum like present and
+  // late; only an approved excuse request or a lecturer sets it.
+  status:        { type: DataTypes.ENUM('present','late','absent','excused'), defaultValue: 'present' },
   marked_at:     { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   geo_lat:       { type: DataTypes.DECIMAL(10, 8) },
   geo_lng:       { type: DataTypes.DECIMAL(11, 8) },

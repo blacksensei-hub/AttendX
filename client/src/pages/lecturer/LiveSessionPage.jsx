@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo }      from 'react';
-import { useParams, useNavigate }            from 'react-router-dom';
+import { useParams, useNavigate, Link }      from 'react-router-dom';
 import {
   useQuery, useMutation, useQueryClient,
 }                                            from '@tanstack/react-query';
 import { motion, AnimatePresence }           from 'framer-motion';
 import {
-  StopCircle, RefreshCw, ArrowLeft, Wifi, WifiOff,
+  StopCircle, RefreshCw, ArrowLeft, Wifi, WifiOff, Presentation,
 }                                            from 'lucide-react';
 import { formatDistanceToNow }               from 'date-fns';
 import toast                                 from 'react-hot-toast';
@@ -16,6 +16,7 @@ import QRCodeDisplay                         from '../../components/sessions/QRC
 import LiveAttendance                        from '../../components/sessions/LiveAttendanceList';
 
 import PageShell                             from '../../components/layout/PageShell';
+import { ConfirmDialog }                     from '../../components/console/overlays';
 import { useIsMobile }                       from '../../hooks/useIsMobile';
 import { SPRING, TAP }                       from '../../lib/motion';
 
@@ -57,6 +58,7 @@ export default function LiveSessionPage() {
     queryFn:  () => sessionService.getLiveAttendance(sessionId),
   });
   const [live, setLive] = useState([]);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   useEffect(() => {
     const handler = (record) => {
@@ -77,7 +79,9 @@ export default function LiveSessionPage() {
     onSuccess:  () => {
       toast.success('Session closed');
       qc.invalidateQueries({ queryKey: ['classes'] });
-      navigate('/lecturer/classes');
+      qc.invalidateQueries({ queryKey: ['timetable'] });
+      const classId = sessionData?.session?.class?.id;
+      navigate(classId ? `/lecturer/classes/${classId}` : '/lecturer/classes');
     },
     onError: (err) =>
       toast.error(err.response?.data?.message || 'Failed to close session'),
@@ -135,14 +139,14 @@ export default function LiveSessionPage() {
         whileTap={TAP.button}
         whileHover={{ x: -2 }}
         transition={SPRING.snappy}
-        onClick={() => navigate('/lecturer/classes')}
+        onClick={() => navigate(classId ? `/lecturer/classes/${classId}` : '/lecturer/classes')}
         style={{
           display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
           color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: 0, cursor: 'pointer',
           fontFamily: 'var(--font-body)', alignSelf: 'flex-start',
         }}
       >
-        <ArrowLeft size={14} /> Back to classes
+        <ArrowLeft size={14} /> {classId ? 'Back to the class' : 'Back to classes'}
       </motion.button>
 
       {/* ── Header. Shares a layoutId with ClassCard so a live card
@@ -187,13 +191,12 @@ export default function LiveSessionPage() {
             {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
             {connected ? 'Real-time on' : 'Connecting'}
           </span>
+          <Link to={`/lecturer/session/${sessionId}/projector`} className="btn-ghost" title="Full-screen view for the classroom screen">
+            <Presentation size={15} /> Projector
+          </Link>
           <motion.button
             whileTap={TAP.button}
-            onClick={() => {
-              if (confirm('Close this session? Students will no longer be able to mark attendance, and everyone who did not scan will be marked absent.')) {
-                closeMut.mutate();
-              }
-            }}
+            onClick={() => setConfirmClose(true)}
             disabled={closeMut.isPending}
             className="btn-danger"
           >
@@ -310,6 +313,19 @@ export default function LiveSessionPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        busy={closeMut.isPending}
+        danger
+        title="Close this session?"
+        confirmLabel="Close session"
+        onConfirm={() => closeMut.mutate()}
+      >
+        Students can no longer scan in. Everyone who hasn't scanned is marked absent, or excused if an
+        excused absence covering today was approved. {counts.absent > 0 ? `${counts.absent} haven't scanned yet.` : 'Everyone has scanned.'}
+      </ConfirmDialog>
     </PageShell>
   );
 }

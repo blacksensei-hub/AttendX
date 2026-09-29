@@ -1,6 +1,7 @@
 const { Appeal, Session, Attendance, Enrollment, User, Class } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const nodemailer         = require('nodemailer');
+const { findClassFor, reviewableBySql } = require('../services/classAccess');
 
 // ─── Nodemailer transporter ───────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -45,6 +46,8 @@ exports.submitAppeal = async (req, res) => {
 
     if (attendance?.status === 'present')
       return res.status(400).json(error('You are already marked present for this session'));
+    if (attendance?.status === 'excused')
+      return res.status(400).json(error('This absence is already excused'));
 
     const appeal = await Appeal.create({
       student_id:    studentId,
@@ -120,7 +123,8 @@ exports.getLecturerAppeals = async (req, res) => {
       INNER JOIN sessions s ON s.id = a.session_id
       INNER JOIN classes  c ON c.id = s.class_id
 
-      WHERE c.lecturer_id = :lecturerId
+      -- Owner and co-lecturers review appeals; TAs don't.
+      WHERE ${reviewableBySql('c')}
 
       ORDER BY
         CASE a.status WHEN 'pending' THEN 0 ELSE 1 END ASC,
@@ -178,9 +182,7 @@ exports.reviewAppeal = async (req, res) => {
       return res.status(404).json(error('Appeal not found'));
 
     // Verify this appeal belongs to one of the requesting lecturer's classes
-    const cls = await Class.findOne({
-      where: { id: appeal.session.class_id, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, appeal.session.class_id, 'edit');
     if (!cls)
       return res.status(403).json(error('Not authorized to review this appeal'));
 

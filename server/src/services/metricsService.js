@@ -36,7 +36,7 @@ const SLOTS = `
   LEFT JOIN attendance a ON a.session_id = s.id AND a.student_id = e.student_id
   WHERE s.status = 'closed'
 `;
-const ATTENDED = `count(a.id) FILTER (WHERE a.status IN ('present', 'late'))`;
+const ATTENDED = `count(a.id) FILTER (WHERE a.status IN ('present', 'late', 'excused'))`;
 
 const q = (sql, replacements) => sequelize.query(sql, { replacements, type: QueryTypes.SELECT });
 

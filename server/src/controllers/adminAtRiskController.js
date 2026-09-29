@@ -57,7 +57,7 @@ exports.getAtRisk = async (req, res) => {
     const allAttendance = await Attendance.findAll({
       where: {
         session_id: { [Op.in]: closedSessions.map(s => s.id) },
-        status:     { [Op.in]: ['present', 'late'] },
+        status:     { [Op.in]: ['present', 'late', 'excused'] },
       },
       attributes: ['student_id', 'session_id'],
     });
@@ -212,7 +212,7 @@ async function hydrate(userId, classId) {
       where: {
         student_id: userId,
         session_id: { [Op.in]: sessionIds },
-        status:     { [Op.in]: ['present', 'late'] },
+        status:     { [Op.in]: ['present', 'late', 'excused'] },
       },
       attributes: ['session_id'],
     });

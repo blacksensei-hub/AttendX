@@ -30,8 +30,9 @@ export const ROUTE_IMPORTS = {
   // Lecturer
   '/lecturer':           () => import('../pages/lecturer/LecturerDashboard'),
   '/lecturer/classes':   () => import('../pages/lecturer/ClassesPage'),
+  '/lecturer/timetable': () => import('../pages/lecturer/TimetablePage'),
   '/lecturer/sessions':  () => import('../pages/lecturer/LiveSessionsPage'),
-  '/lecturer/appeals':   () => import('../pages/lecturer/AppealsPage'),
+  '/lecturer/requests':  () => import('../pages/lecturer/RequestsPage'),
   '/lecturer/alerts':    () => import('../pages/lecturer/AtRiskPage'),
   '/lecturer/reports':   () => import('../pages/lecturer/ReportsPage'),
 
@@ -39,6 +40,8 @@ export const ROUTE_IMPORTS = {
   '/student':            () => import('../pages/student/StudentDashboard'),
   '/student/classes':    () => import('../pages/student/MyClassesPage'),
   '/student/history':    () => import('../pages/student/AttendanceHistoryPage'),
+  '/student/timetable':  () => import('../pages/student/TimetablePage'),
+  '/student/requests':   () => import('../pages/student/RequestsPage'),
   '/student/scan':       () => import('../pages/student/ScanPage'),
 
   // Admin

@@ -19,7 +19,9 @@ import { useScrolledPast }                   from '../../hooks/useScrolledPast';
 import { consoleApi }                        from '../../services/consoleService';
 import { useCommandPaletteHotkey }           from '../console/format';
 import { ADMIN_NAV }                         from './adminNav';
+import { shortName }                         from '../../lib/names';
 import '../console/console.css';
+import '../teaching/teaching.css';
 
 // cmdk and the palette only load the first time an admin opens it.
 const CommandPalette = lazy(() => import('../console/CommandPalette'));
@@ -54,16 +56,19 @@ const NAV = {
   lecturer: [
     { label: 'Dashboard', to: '/lecturer' },
     { label: 'Classes',   to: '/lecturer/classes' },
+    { label: 'Timetable', to: '/lecturer/timetable' },
     { label: 'Live',      to: '/lecturer/sessions' },
-    { label: 'Appeals',   to: '/lecturer/appeals', badgeKey: 'appeals' },
+    { label: 'Requests',  to: '/lecturer/requests', badgeKey: 'requests' },
     { label: 'Alerts',    to: '/lecturer/alerts' },
     { label: 'Reports',   to: '/lecturer/reports' },
   ],
   student: [
     { label: 'Dashboard',  to: '/student' },
     { label: 'Scan',       to: '/student/scan' },
-    { label: 'My classes', to: '/student/classes' },
+    { label: 'Classes',    to: '/student/classes' },
+    { label: 'Timetable',  to: '/student/timetable' },
     { label: 'History',    to: '/student/history' },
+    { label: 'Requests',   to: '/student/requests' },
   ],
   admin: ADMIN_NAV,
 };
@@ -151,13 +156,22 @@ export default function AppShell({ role }) {
     refetchInterval: 60_000,
     enabled:         role === 'lecturer',
   });
+  const { data: excuseData } = useQuery({
+    queryKey:        ['lecturer-excuse-count'],
+    queryFn:         () => api.get('/teaching/excuses', { params: { status: 'pending' } }).then(r => r.data),
+    refetchInterval: 60_000,
+    enabled:         role === 'lecturer',
+  });
   const { data: flagData } = useQuery({
     queryKey:        ['admin-flag-count'],
     queryFn:         () => consoleApi.fraud({ summary: 1 }),
     refetchInterval: 60_000,
     enabled:         isConsole,
   });
-  const badges = { appeals: appealsData?.pendingCount ?? 0, flags: flagData?.counts?.open ?? 0 };
+  const badges = {
+    requests: (appealsData?.pendingCount ?? 0) + (excuseData?.counts?.pending ?? 0),
+    flags:    flagData?.counts?.open ?? 0,
+  };
 
   const handleLogout = () => {
     logout();
@@ -591,7 +605,7 @@ function UserMenu({ user, role, onLogout, compact }) {
         <Avatar name={user?.name} />
         <span style={{ textAlign: 'left', lineHeight: 1.15 }}>
           <span style={{ display: 'block', fontSize: 'var(--text-sm)', fontWeight: 600, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {user?.name?.split(' ')[0]}
+            {shortName(user?.name)}
           </span>
           <span className="kicker" style={{ fontSize: 9.5 }}>{role}</span>
         </span>

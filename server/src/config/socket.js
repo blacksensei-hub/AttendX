@@ -54,17 +54,16 @@ function initSocket(httpServer) {
     if (socket.user.role === 'admin') socket.join('admin:ops');
 
     // Join a session room. The room carries every scan in real time
-    // (names, emails, student IDs, proxy flags), so only the lecturer
-    // who owns the session, or an admin, may join it.
+    // (names, emails, student IDs, proxy flags), so only the class's
+    // teaching staff (owner, co-lecturers, TAs) or an admin may join it.
     socket.on('join-session', async (sessionId) => {
       try {
         if (typeof sessionId !== 'string') return;
         if (socket.user.role !== 'admin') {
-          const { Session, Class } = require('../models');
+          const { Session } = require('../models');
+          const { findClassFor } = require('../services/classAccess');
           const session = await Session.findByPk(sessionId, { attributes: ['class_id'] });
-          const owns = session && await Class.count({
-            where: { id: session.class_id, lecturer_id: socket.user.id },
-          });
+          const owns = session && await findClassFor(socket.user.id, session.class_id, 'view');
           if (!owns) {
             console.warn(`[Socket] ${socket.user.id} refused session room ${sessionId}`);
             return;

@@ -40,6 +40,7 @@ Semantic tokens only, never raw hex in components.
 | `--brand` | #2248FF cobalt | #3D5CFF | The one accent: primary action, current selection |
 | `--green-fill` | #14C9A6 teal | #2BD9B5 | Present, live, healthy |
 | `--amber-*` | | | Late, approaching a limit |
+| `--violet-*` | #5B3FD9 | #A994FF | Excused (counts, but not a scan); a role on a shared class |
 | `--red-*` | | | Absent, at risk, failure, destructive |
 
 - One accent per view. Status colours only ever carry status, and never by colour alone
@@ -77,6 +78,9 @@ doesn't ship.
 - **Tables** for anything people compare or act on in bulk: sticky header, tabular numbers,
   sortable columns where order matters, row selection only when bulk actions exist.
 - **Empty, loading, error, success** states are designed for every data view.
+- One kit for every role: `components/console/` holds the panels, tables, tabs, segmented
+  controls, drawers and dialogs; the admin console restyles them (Look B), the lecturer and
+  student pages use them as they are (Look A, `pages/teaching.md`).
 - Icon-only buttons have an `aria-label`. Focus rings are never removed.
 - Touch targets 44x44px minimum on touch layouts.
 

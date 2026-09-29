@@ -8,7 +8,7 @@ import Animated, {
 }                                                    from 'react-native-reanimated';
 import {
   Bell, X, CheckCheck, Trash2,
-  Radio, CheckCircle, Clock, Megaphone, TriangleAlert, ShieldAlert,
+  Radio, CheckCircle, Clock, Megaphone, TriangleAlert, ShieldAlert, CalendarX2, CalendarClock, Users,
 }                                                    from 'lucide-react-native';
 import { formatDistanceToNow }                       from 'date-fns';
 
@@ -66,6 +66,19 @@ const TYPE_META = (t) => ({
   // Fraud review warnings from an admin
   security: {
     icon: ShieldAlert, color: t.colors.red, bg: t.colors.redBg, border: t.colors.redBorder,
+  },
+  // Excused absences, class reminders and shared classes (web features)
+  excuse_request: {
+    icon: CalendarX2, color: t.colors.violet, bg: t.colors.violetBg, border: t.colors.violetBorder,
+  },
+  excuse_reviewed: {
+    icon: CalendarX2, color: t.colors.violet, bg: t.colors.violetBg, border: t.colors.violetBorder,
+  },
+  class_reminder: {
+    icon: CalendarClock, color: t.colors.brandText, bg: t.colors.brandSubtle, border: t.colors.brandBorder,
+  },
+  staff_added: {
+    icon: Users, color: t.colors.brandText, bg: t.colors.brandSubtle, border: t.colors.brandBorder,
   },
   default: {
     icon: Bell, color: t.colors.textSecondary, bg: t.colors.bgRaised, border: t.colors.border,

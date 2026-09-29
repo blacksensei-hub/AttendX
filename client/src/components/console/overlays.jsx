@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Loader2 } from 'lucide-react';
 import { EASE, SPRING, DURATION } from '../../lib/motion';
+import { useUIStore } from '../../store/uiStore';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -12,6 +13,10 @@ import { EASE, SPRING, DURATION } from '../../lib/motion';
  * backdrop, and exit faster than they enter.
  * ═════════════════════════════════════════════════════════════════
  */
+
+// Inside the admin console, overlays take the control-room palette;
+// on lecturer and student pages they follow the normal theme.
+const usePortalClass = () => (useUIStore(s => s.inConsole) ? 'console-portal' : 'app-portal');
 
 function useOverlay(open, onClose) {
   const opener = useRef(null);
@@ -27,16 +32,18 @@ function useOverlay(open, onClose) {
   }, [open, onClose]);
 }
 
-export function Drawer({ open, onClose, label, title, children, footer }) {
+export function Drawer({ open, onClose, label, title, children, footer, wide = false }) {
   useOverlay(open, onClose);
+  const portal = usePortalClass();
   return createPortal(
     <AnimatePresence>
       {open && (
         <>
-          <motion.div className="c-overlay console-portal" onClick={onClose}
+          <motion.div className={`c-overlay ${portal}`} onClick={onClose}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: DURATION.fast } }} />
           <motion.aside
-            className="c-drawer console-portal"
+            className={`c-drawer ${portal}`}
+            style={wide ? { width: 'min(640px, 100vw)' } : undefined}
             role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : label}
             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%', transition: { duration: DURATION.base, ease: EASE.exit } }}
             transition={SPRING.page}
@@ -60,14 +67,15 @@ export function Drawer({ open, onClose, label, title, children, footer }) {
 
 export function ConfirmDialog({ open, onClose, onConfirm, title, children, confirmLabel = 'Confirm', danger = false, busy = false }) {
   useOverlay(open, onClose);
+  const portal = usePortalClass();
   return createPortal(
     <AnimatePresence>
       {open && (
         <>
-          <motion.div className="c-overlay console-portal" onClick={busy ? undefined : onClose}
+          <motion.div className={`c-overlay ${portal}`} onClick={busy ? undefined : onClose}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: DURATION.fast } }} />
           <motion.div
-            className="c-dialog console-portal"
+            className={`c-dialog ${portal}`}
             role="alertdialog" aria-modal="true" aria-label={title}
             initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98, transition: { duration: DURATION.fast, ease: EASE.exit } }}

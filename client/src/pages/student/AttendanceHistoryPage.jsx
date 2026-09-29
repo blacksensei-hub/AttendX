@@ -4,9 +4,11 @@ import { motion, AnimatePresence }                  from 'framer-motion';
 import { format }                                   from 'date-fns';
 import {
   Download, Search, Filter,
-  ChevronLeft, ChevronRight, X, MessageSquare,
+  ChevronLeft, ChevronRight, X, MessageSquare, FileText, CalendarX2, Loader2,
 }                                                   from 'lucide-react';
 import toast                                        from 'react-hot-toast';
+import { Link }                                     from 'react-router-dom';
+import { meApi }                                    from '../../services/teachingService';
 
 import api                                          from '../../services/api';
 import PageShell, { PageHeader }                    from '../../components/layout/PageShell';
@@ -41,6 +43,9 @@ export default function AttendanceHistoryPage() {
   const [page,        setPage]        = useState(1);
   const [exporting,   setExporting]   = useState(false);
   const [appealModal, setAppealModal] = useState(null);
+  // Excuses can be asked for up to 30 days back (the server's limit);
+  // fixed when the page opens so rows don't change under the reader.
+  const [excuseCutoff] = useState(() => Date.now() - 29 * 86_400_000);
 
   const params = new URLSearchParams();
   if (status) params.set('status', status);
@@ -117,10 +122,13 @@ export default function AttendanceHistoryPage() {
 
       {/* ── Header ──────────────────────────────────────────── */}
       <PageHeader
-        title="Attendance History"
-        subtitle={`${total} record${total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}`}
+        kicker="Student / History"
+        title="Your"
+        accent="history."
+        subtitle={`${total} record${total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}. Absent in error? Appeal it. Away for a good reason? Ask for it to be excused.`}
         action={
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <StatementButton />
             <motion.button
               whileTap={TAP.button}
               whileHover={!exporting && total > 0 ? { y: -1 } : undefined}
@@ -227,6 +235,7 @@ export default function AttendanceHistoryPage() {
             <option value="">All statuses</option>
             <option value="present">Present</option>
             <option value="late">Late</option>
+            <option value="excused">Excused</option>
             <option value="absent">Absent</option>
           </select>
 
@@ -371,6 +380,7 @@ export default function AttendanceHistoryPage() {
                   <RecordRow
                     record={r}
                     existingAppeal={appealsBySession[r.sessionId]}
+                    excuseCutoff={excuseCutoff}
                     onAppeal={() => setAppealModal({
                       sessionId:    r.sessionId,
                       className:    r.className,
@@ -414,9 +424,13 @@ export default function AttendanceHistoryPage() {
 }
 
 // ─── Record row ────────────────────────────────────────────────
-function RecordRow({ record, existingAppeal, onAppeal }) {
+function RecordRow({ record, existingAppeal, onAppeal, excuseCutoff }) {
   const canAppeal = (record.status === 'absent' || record.status === 'late')
     && !existingAppeal;
+  // Excuses can be asked for up to 30 days back (the server's limit).
+  const day = new Date(record.openAt).toISOString().slice(0, 10);
+  const canExcuse = record.status === 'absent' && record.classId && !existingAppeal
+    && Date.parse(record.openAt) > excuseCutoff;
 
   return (
     <motion.div
@@ -523,6 +537,12 @@ function RecordRow({ record, existingAppeal, onAppeal }) {
             <MessageSquare size={11} />
             Appeal
           </motion.button>
+        )}
+
+        {canExcuse && (
+          <Link to={`/student/requests?new=1&class=${record.classId}&date=${day}`} className="chip" title="I was away for a good reason">
+            <CalendarX2 size={11} /> Excuse
+          </Link>
         )}
 
         {existingAppeal && (
@@ -863,5 +883,37 @@ function AppealModal({ session, onClose, onSuccess }) {
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+// ─── Attendance statement (PDF) ───────────────────────────────
+// A signed-off summary per class for a semester, e.g. for a bursary
+// or a sponsor. Defaults to the current semester.
+function StatementButton() {
+  const { data } = useQuery({ queryKey: ['my-semesters'], queryFn: meApi.semesters, staleTime: 300_000 });
+  const [choice, setChoice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const value = choice || data?.currentId || 'all';
+  const options = [
+    ...(data?.semesters ?? []).map(s => ({ value: s.id, label: s.name })),
+    { value: 'all', label: 'All time' },
+  ];
+  const go = async () => {
+    setBusy(true);
+    try { await meApi.statement(value); toast.success('Statement downloaded'); }
+    catch { toast.error('Could not make your statement'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+      {options.length > 1 && (
+        <select className="c-select" value={value} onChange={e => setChoice(e.target.value)} aria-label="Statement period" style={{ width: 'auto', fontSize: 'var(--text-xs)' }}>
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )}
+      <button type="button" className="btn-ghost" onClick={go} disabled={busy} style={{ fontSize: 'var(--text-xs)' }}>
+        {busy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Statement PDF
+      </button>
+    </span>
   );
 }

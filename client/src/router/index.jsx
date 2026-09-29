@@ -33,16 +33,22 @@ const LecturerDashboard      = lazy(ROUTE_IMPORTS['/lecturer']);
 const ClassesPage            = lazy(ROUTE_IMPORTS['/lecturer/classes']);
 const LiveSessionsPage       = lazy(ROUTE_IMPORTS['/lecturer/sessions']);
 const ReportsPage            = lazy(ROUTE_IMPORTS['/lecturer/reports']);
-const AppealsPage            = lazy(ROUTE_IMPORTS['/lecturer/appeals']);
+const RequestsPage           = lazy(ROUTE_IMPORTS['/lecturer/requests']);
 const AtRiskPage             = lazy(ROUTE_IMPORTS['/lecturer/alerts']);
+const LecturerTimetable      = lazy(ROUTE_IMPORTS['/lecturer/timetable']);
 
 const LiveSessionPage        = lazy(() => import('../pages/lecturer/LiveSessionPage'));
 const SessionRosterPage      = lazy(() => import('../pages/lecturer/SessionRosterPage'));
+const ClassHubPage           = lazy(() => import('../pages/lecturer/ClassHubPage'));
+const StudentDetailPage      = lazy(() => import('../pages/lecturer/StudentDetailPage'));
+const ProjectorPage          = lazy(() => import('../pages/lecturer/ProjectorPage'));
 
 const StudentDashboard       = lazy(ROUTE_IMPORTS['/student']);
 const MyClassesPage          = lazy(ROUTE_IMPORTS['/student/classes']);
 const AttendanceHistoryPage  = lazy(ROUTE_IMPORTS['/student/history']);
 const ScanPage               = lazy(ROUTE_IMPORTS['/student/scan']);
+const StudentTimetable       = lazy(ROUTE_IMPORTS['/student/timetable']);
+const StudentRequests        = lazy(ROUTE_IMPORTS['/student/requests']);
 
 const AdminDashboard         = lazy(ROUTE_IMPORTS['/admin']);
 const AdminClasses           = lazy(ROUTE_IMPORTS['/admin/classes']);
@@ -155,19 +161,35 @@ const router = createBrowserRouter([
   // Lecturer routes
   {
     element: <ProtectedRoute role="lecturer" />,
-    children: [{
-      element: <AppLayout />,
-      children: [
-        { path: '/lecturer',                            element: <LecturerDashboard /> },
-        { path: '/lecturer/classes',                    element: <ClassesPage />       },
-        { path: '/lecturer/sessions',                   element: <LiveSessionsPage />  },
-        { path: '/lecturer/session/:sessionId',         element: <LiveSessionPage />   },
-        { path: '/lecturer/session/:sessionId/roster',  element: <SessionRosterPage /> },
-        { path: '/lecturer/appeals',                    element: <AppealsPage />       },
-        { path: '/lecturer/alerts',                     element: <AtRiskPage />        },
-        { path: '/lecturer/reports',                    element: <ReportsPage />       },
-      ],
-    }],
+    children: [
+      // Projector mode is full screen, outside the app chrome.
+      {
+        path: '/lecturer/session/:sessionId/projector',
+        element: (
+          <Suspense fallback={<div style={{ minHeight: '100dvh', background: '#050A18' }} />}>
+            <ProjectorPage />
+          </Suspense>
+        ),
+      },
+      {
+        element: <AppLayout />,
+        children: [
+          { path: '/lecturer',                            element: <LecturerDashboard /> },
+          { path: '/lecturer/classes',                    element: <ClassesPage />       },
+          { path: '/lecturer/classes/:classId',           element: <ClassHubPage />      },
+          { path: '/lecturer/classes/:classId/students/:studentId', element: <StudentDetailPage /> },
+          { path: '/lecturer/timetable',                  element: <LecturerTimetable /> },
+          { path: '/lecturer/sessions',                   element: <LiveSessionsPage />  },
+          { path: '/lecturer/session/:sessionId',         element: <LiveSessionPage />   },
+          { path: '/lecturer/session/:sessionId/roster',  element: <SessionRosterPage /> },
+          { path: '/lecturer/requests',                   element: <RequestsPage />      },
+          // Old bookmark and email links
+          { path: '/lecturer/appeals',                    element: <Navigate to="/lecturer/requests" replace /> },
+          { path: '/lecturer/alerts',                     element: <AtRiskPage />        },
+          { path: '/lecturer/reports',                    element: <ReportsPage />       },
+        ],
+      },
+    ],
   },
 
   // Student routes
@@ -180,6 +202,8 @@ const router = createBrowserRouter([
         { path: '/student/classes', element: <MyClassesPage />         },
         { path: '/student/history', element: <AttendanceHistoryPage /> },
         { path: '/student/scan',    element: <ScanPage />              },
+        { path: '/student/timetable', element: <StudentTimetable />    },
+        { path: '/student/requests',  element: <StudentRequests />     },
       ],
     }],
   },

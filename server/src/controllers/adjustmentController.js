@@ -3,6 +3,7 @@ const {
   Class, User, Enrollment,
 } = require('../models');
 const { success, error } = require('../utils/apiResponse');
+const { findClassFor }   = require('../services/classAccess');
 const { QueryTypes }     = require('sequelize');
 
 // ─── Adjust a student's attendance status ─────────────────────
@@ -14,8 +15,8 @@ exports.adjustAttendance = async (req, res) => {
     const { attendanceId }        = req.params;
     const { newStatus, reason }   = req.body;
 
-    if (!['present', 'late', 'absent'].includes(newStatus))
-      return res.status(400).json(error('Status must be present, late, or absent'));
+    if (!['present', 'late', 'absent', 'excused'].includes(newStatus))
+      return res.status(400).json(error('Status must be present, late, absent or excused'));
 
     if (!reason?.trim())
       return res.status(400).json(error('A reason is required for manual adjustments'));
@@ -26,9 +27,7 @@ exports.adjustAttendance = async (req, res) => {
 
     // Verify the session belongs to one of this lecturer's classes
     const session = await Session.findByPk(attendance.session_id);
-    const cls     = await Class.findOne({
-      where: { id: session?.class_id, lecturer_id: req.user.id },
-    });
+    const cls     = await findClassFor(req.user.id, session?.class_id, 'edit');
     if (!cls)
       return res.status(403).json(error('Not authorized to adjust this record'));
 
@@ -77,17 +76,15 @@ exports.addAbsentAttendance = async (req, res) => {
     const { sessionId, studentId } = req.params;
     const { newStatus, reason }    = req.body;
 
-    if (!['present', 'late'].includes(newStatus))
-      return res.status(400).json(error('Status must be present or late'));
+    if (!['present', 'late', 'excused'].includes(newStatus))
+      return res.status(400).json(error('Status must be present, late or excused'));
 
     if (!reason?.trim())
       return res.status(400).json(error('A reason is required for manual adjustments'));
 
     // Verify session belongs to this lecturer
     const session = await Session.findByPk(sessionId);
-    const cls     = await Class.findOne({
-      where: { id: session?.class_id, lecturer_id: req.user.id },
-    });
+    const cls     = await findClassFor(req.user.id, session?.class_id, 'edit');
     if (!cls)
       return res.status(403).json(error('Not authorized to adjust this record'));
 
@@ -151,9 +148,7 @@ exports.getSessionAuditTrail = async (req, res) => {
 
     // Verify this session belongs to the lecturer
     const session = await Session.findByPk(sessionId);
-    const cls     = await Class.findOne({
-      where: { id: session?.class_id, lecturer_id: req.user.id },
-    });
+    const cls     = await findClassFor(req.user.id, session?.class_id, 'view');
     if (!cls)
       return res.status(403).json(error('Not authorized'));
 
@@ -206,9 +201,7 @@ exports.getSessionRoster = async (req, res) => {
 
     // Verify this session belongs to the lecturer
     const session = await Session.findByPk(sessionId);
-    const cls     = await Class.findOne({
-      where: { id: session?.class_id, lecturer_id: req.user.id },
-    });
+    const cls     = await findClassFor(req.user.id, session?.class_id, 'view');
     if (!cls)
       return res.status(403).json(error('Not authorized'));
 
@@ -251,7 +244,10 @@ exports.getSessionRoster = async (req, res) => {
         className: session.class_name_snapshot ?? cls.name,
         openAt:    session.open_at,
         status:    session.status,
+        classId:   session.class_id,
       },
+      // Teaching assistants see the register but can't change it.
+      canEdit: cls.myRole !== 'ta',
     }));
   } catch (err) {
     console.error('GET SESSION ROSTER ERROR:', err.message);

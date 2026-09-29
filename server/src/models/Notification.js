@@ -13,7 +13,7 @@ const Notification = sequelize.define('Notification', {
   },
   type: {
     // Must match enum_notifications_type in the database (see
-    // server/sql/2026-09-27_admin_console.sql for the last additions).
+    // server/sql/2026-09-29_teaching_tools.sql for the last additions).
     type:      DataTypes.ENUM(
       'session_opened',
       'attendance_confirmed',
@@ -21,7 +21,11 @@ const Notification = sequelize.define('Notification', {
       'announcement',
       'at_risk',
       'at_risk_alert',
-      'security'
+      'security',
+      'excuse_request',
+      'excuse_reviewed',
+      'class_reminder',
+      'staff_added'
     ),
     allowNull: false,
   },

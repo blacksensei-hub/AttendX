@@ -23,6 +23,8 @@ const thresholdRoutes  = require('./routes/thresholds');
 const adjustmentRoutes = require('./routes/adjustments');
 const scheduleRoutes   = require('./routes/schedules');
 const impersonationRoutes = require('./routes/impersonation');
+const teachingRoutes   = require('./routes/teaching');
+const meRoutes         = require('./routes/me');
 
 const app    = express();
 const server = http.createServer(app);
@@ -102,6 +104,11 @@ app.use('/api/schedules',     scheduleRoutes);
 // (usually student/lecturer) — a router-level authorize('admin') would
 // trap admins inside impersonation with no way out. See routes/impersonation.js.
 app.use('/api/impersonation', impersonationRoutes);
+app.use('/api/teaching',      teachingRoutes);
+app.use('/api/me',            meRoutes);
+// Private timetable feed for calendar apps. Public by design: the
+// unguessable token in the URL is the only credential (see meController).
+app.get('/api/calendar/:token.ics', require('./controllers/meController').calendarFeed);
 
 // ─── Health check ─────────────────────────────────────────────
 // Exposed at both paths: /health for platform probes (Railway/Render)

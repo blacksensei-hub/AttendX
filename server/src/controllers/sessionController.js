@@ -7,27 +7,28 @@ const { success, error }         = require('../utils/apiResponse');
 const { Op }                     = require('sequelize');
 const { sendSessionOpenedEmail } = require('../services/emailService');
 const { finalizeClose }          = require('../services/sessionLifecycle');
+const { findClassFor, classIdsFor } = require('../services/classAccess');
 
 // ─── Ownership ────────────────────────────────────────────────
-// The live QR token, the live roster and the session details are the
-// lecturer's alone. Handing the current QR token to any signed-in user
-// let a student fetch it from home and mark themselves present, which
-// defeats the whole scan-in-the-room design.
-async function findOwnedSession(sessionId, lecturerId) {
+// The live QR token, the live roster and the session details belong to
+// the class's teaching staff (owner, co-lecturers and TAs) alone.
+// Handing the current QR token to any signed-in user let a student
+// fetch it from home and mark themselves present, which defeats the
+// whole scan-in-the-room design.
+async function findOwnedSession(sessionId, lecturerId, perm = 'run') {
   const session = await Session.findByPk(sessionId);
   if (!session) return null;
-  const cls = await Class.findOne({ where: { id: session.class_id, lecturer_id: lecturerId } });
+  const cls = await findClassFor(lecturerId, session.class_id, perm);
   return cls ? { session, cls } : null;
 }
+exports.findOwnedSession = findOwnedSession;
 
 // ─── Open session ─────────────────────────────────────────────
 exports.openSession = async (req, res) => {
   try {
     const { classId, title, late_threshold, qr_interval, close_after } = req.body;
 
-    const cls = await Class.findOne({
-      where: { id: classId, lecturer_id: req.user.id },
-    });
+    const cls = await findClassFor(req.user.id, classId, 'run');
     if (!cls) return res.status(404).json(error('Class not found or unauthorized'));
 
     const existingOpen = await Session.findOne({
@@ -125,12 +126,13 @@ exports.closeSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
-    const session = await Session.findByPk(sessionId);
-    if (!session) return res.status(404).json(error('Session not found'));
-
-    const cls = await Class.findByPk(session.class_id);
-    if (cls && cls.lecturer_id !== req.user.id)
-      return res.status(403).json(error('Not your session'));
+    // A session whose class was deleted has no staff, so this used to
+    // let any lecturer close it. Deleting a class now closes its open
+    // session first (classController.deleteClass).
+    const owned = await findOwnedSession(sessionId, req.user.id);
+    if (!owned) return res.status(404).json(error('Session not found'));
+    const { session, cls } = owned;
+    if (session.status !== 'open') return res.status(409).json(error('This session is already closed'));
 
     await session.update({ status: 'closed', closed_at: new Date() });
 
@@ -205,7 +207,7 @@ exports.getSession = async (req, res) => {
     return res.json(success({
       session: {
         ...session.toJSON(),
-        class: cls?.toJSON() ?? null,
+        class: cls ? { ...cls.toJSON(), myRole: cls.myRole } : null,
         enrollmentCount,
       },
     }));
@@ -306,10 +308,7 @@ exports.getActiveSessions = async (req, res) => {
 // ─── Lecturer: get all currently open sessions ────────────────
 exports.getLecturerActiveSessions = async (req, res) => {
   try {
-    const classes = await Class.findAll({
-      where: { lecturer_id: req.user.id },
-    });
-    const classIds = classes.map(c => c.id);
+    const classIds = await classIdsFor(req.user.id, 'run');
 
     const sessions = await Session.findAll({
       where:   { class_id: classIds, status: 'open' },
@@ -337,7 +336,8 @@ exports.getLecturerActiveSessions = async (req, res) => {
         enrollmentCount,
         present:         records.filter(r => r.status === 'present').length,
         late:            records.filter(r => r.status === 'late').length,
-        total:           records.length,
+        // Scans only; a lecturer's manual 'excused' row isn't a scan.
+        total:           records.filter(r => r.status === 'present' || r.status === 'late').length,
       };
     }));
 

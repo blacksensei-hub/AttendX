@@ -1,6 +1,7 @@
-const { ClassSchedule, Class, Session, Enrollment, User } = require('../models');
+const { ClassSchedule, Class, Session, Enrollment, User, UserPreference } = require('../models');
 const { Op } = require('sequelize');
-const { sendSessionOpenedEmail } = require('./emailService');
+const { sendSessionOpenedEmail, sendClassReminderEmail } = require('./emailService');
+const { createNotification } = require('./notificationService');
 const { blockingEventOn } = require('./calendarService');
 const { opsEmit, beat } = require('./opsFeed');
 
@@ -15,7 +16,7 @@ function startScheduleRunner(io) {
     beat('scheduleRunner');
     try {
       await processScheduledSlots(io);
-      await sendUpcomingReminders();
+      await sendUpcomingReminders(io);
     } catch (err) {
       console.error('[ScheduleRunner] Error:', err.message);
     }
@@ -133,94 +134,63 @@ async function openScheduledSession(sched, io) {
   }
 }
 
-// ─── Send a reminder 10 minutes before each scheduled session ─
-async function sendUpcomingReminders() {
+// ─── Remind students before each scheduled session ────────────
+// Each student picks how long before class (user_preferences:
+// 10, 30 or 60 minutes, or off); no preference means 10. Every lead
+// time is checked each minute, so a student hears exactly once, at
+// their own lead time, by in-app notification and email.
+const LEAD_MINUTES = [10, 30, 60];
+
+async function sendUpcomingReminders(io) {
   const now = new Date();
-  const in10Min = new Date(now.getTime() + 10 * 60 * 1000);
-  const today   = in10Min.getDay();
-  const hhmm    = `${String(in10Min.getHours()).padStart(2, '0')}:${String(in10Min.getMinutes()).padStart(2, '0')}`;
+  for (const lead of LEAD_MINUTES) {
+    const at    = new Date(now.getTime() + lead * 60 * 1000);
+    const hhmm  = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 
-  // No "starting in 10 minutes" email for a session that won't open.
-  if (await blockingEventOn(in10Min)) return;
+    // No reminder for a session that won't open.
+    if (await blockingEventOn(at)) continue;
 
-  const schedules = await ClassSchedule.findAll({
-    where: {
-      is_active:   true,
-      day_of_week: today,
-    },
-    include: [{ model: Class, as: 'class' }],
-  });
-
-  for (const sched of schedules) {
-    const scheduleTime = sched.start_time.substring(0, 5);
-    if (scheduleTime !== hhmm) continue;
-
-    const enrollments = await Enrollment.findAll({
-      where: { class_id: sched.class_id },
-      include: [{ model: User, as: 'student', attributes: ['name', 'email'] }],
+    const schedules = await ClassSchedule.findAll({
+      where:   { is_active: true, day_of_week: at.getDay() },
+      include: [{ model: Class, as: 'class' }],
     });
 
-    enrollments.forEach(e => {
-      sendReminderEmail({
-        to:          e.student?.email,
-        studentName: e.student?.name,
-        className:   sched.class?.name,
-        startTime:   scheduleTime,
-      }).catch(err =>
-        console.error(`[Email] Reminder error for ${e.student?.email}:`, err.message)
-      );
-    });
+    for (const sched of schedules) {
+      if (sched.start_time.substring(0, 5) !== hhmm) continue;
+
+      const enrollments = await Enrollment.findAll({
+        where:   { class_id: sched.class_id },
+        include: [{ model: User, as: 'student', attributes: ['id', 'name', 'email', 'is_active'] }],
+      });
+      const ids = enrollments.map(e => e.student_id);
+      // Before the preferences table exists everyone gets the default.
+      const prefs = ids.length
+        ? await UserPreference.findAll({ where: { user_id: ids }, attributes: ['user_id', 'reminder_minutes'] }).catch(() => [])
+        : [];
+      const leadOf = new Map(prefs.map(p => [p.user_id, p.reminder_minutes]));
+
+      for (const e of enrollments) {
+        if (!e.student?.is_active || (leadOf.get(e.student_id) ?? 10) !== lead) continue;
+        const className = sched.class?.name ?? 'Your class';
+        const location  = sched.class?.location_name ?? null;
+        createNotification(io, {
+          userId:  e.student_id,
+          type:    'class_reminder',
+          title:   `${className} starts in ${lead} minutes`,
+          message: `At ${hhmm}${location ? ` in ${location}` : ''}. Scan in when the session opens.`,
+          data:    { classId: sched.class_id, scheduleId: sched.id },
+        }).catch(err => console.warn('[ScheduleRunner] Reminder notice failed:', err.message));
+        sendClassReminderEmail({
+          to: e.student.email, studentName: e.student.name, className, startTime: hhmm, minutes: lead, location,
+        });
+      }
+    }
   }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
 function dayName(dow) {
   return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dow];
-}
-
-const nodemailer = require('nodemailer');
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-});
-
-async function sendReminderEmail({ to, studentName, className, startTime }) {
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <body style="margin:0;padding:0;background:#f4f6fb;font-family:'Segoe UI',Arial,sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
-        <tr><td align="center">
-          <table width="100%" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;">
-            <tr><td style="background:#3b82f6;padding:24px 32px;color:#fff;font-weight:600;">
-              ⏰ Class starting soon
-            </td></tr>
-            <tr><td style="padding:32px;">
-              <p style="color:#374151;font-size:15px;">Hi <strong>${studentName}</strong>,</p>
-              <p style="color:#374151;font-size:15px;line-height:1.6;">
-                Your class <strong style="color:#2563eb;">${className}</strong>
-                is starting in about <strong>10 minutes</strong> at <strong>${startTime}</strong>.
-                Get ready to mark your attendance.
-              </p>
-              <a href="${process.env.CLIENT_URL}/student"
-                 style="display:inline-block;background:#3b82f6;color:#fff;
-                        padding:12px 24px;border-radius:10px;text-decoration:none;
-                        font-weight:600;margin-top:8px;">
-                Open AttendX →
-              </a>
-            </td></tr>
-          </table>
-        </td></tr>
-      </table>
-    </body></html>
-  `;
-
-  await transporter.sendMail({
-    from:    process.env.EMAIL_FROM,
-    to,
-    subject: `⏰ ${className} starts in 10 minutes`,
-    html,
-  });
 }
 
 module.exports = { startScheduleRunner };

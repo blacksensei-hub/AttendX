@@ -71,6 +71,8 @@ function resolveStatus(t, status) {
     present:   { label: 'Present',   color: t.colors.green,  bg: t.colors.greenBg,  border: t.colors.greenBorder,  dot: false },
     late:      { label: 'Late',      color: t.colors.amber,  bg: t.colors.amberBg,  border: t.colors.amberBorder,  dot: false },
     absent:    { label: 'Absent',    color: t.colors.red,    bg: t.colors.redBg,    border: t.colors.redBorder,    dot: false },
+    // Approved by a lecturer; counts towards the minimum without a scan.
+    excused:   { label: 'Excused',   color: t.colors.violet, bg: t.colors.violetBg, border: t.colors.violetBorder, dot: false },
 
     live:      { label: 'Live',      color: t.colors.green,  bg: t.colors.greenBg,  border: t.colors.greenBorder,  dot: true  },
     scheduled: { label: 'Scheduled', color: t.colors.brandText, bg: t.colors.brandSubtle, border: t.colors.brandBorder, dot: false },

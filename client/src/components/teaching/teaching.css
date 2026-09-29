@@ -1,0 +1,171 @@
+/* ═══════════════════════════════════════════════════════════════
+   Lecturer and student tools (Look A, "Roll Call, refined").
+   Rules: design-system/attendx/pages/teaching.md.
+
+   Status colour is fixed everywhere: teal present, amber late, violet
+   excused, red absent. It always travels with a label, a letter or a
+   position, never colour alone.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Register strip: one square per session ─────────────────── */
+.reg { display: inline-flex; gap: 3px; align-items: center; }
+.reg-cell {
+  width: 14px; height: 14px; border-radius: 4px;
+  display: inline-grid; place-items: center;
+  font: 600 8.5px/1 var(--font-mono);
+  color: transparent;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: transform var(--duration-fast) var(--ease-state);
+}
+.reg-cell.present { background: var(--green-fill); box-shadow: none; }
+.reg-cell.late    { background: var(--amber-fill); box-shadow: none; }
+.reg-cell.excused { background: var(--violet); box-shadow: none; }
+.reg-cell.absent  { background: transparent; box-shadow: inset 0 0 0 1.5px var(--red-fill); }
+.reg-cell.none    { background: transparent; box-shadow: inset 0 0 0 1px var(--border); opacity: .5; }
+.reg.is-large .reg-cell { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; color: rgba(255, 255, 255, .92); }
+.reg.is-large .reg-cell.absent { color: var(--red); }
+.reg.is-large .reg-cell.none { color: transparent; }
+.reg-cell:hover { transform: translateY(-1px); }
+.reg-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-muted); }
+.reg-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── Rate meter: rate bar with the minimum marked ───────────── */
+.meter { display: grid; grid-template-columns: auto minmax(60px, 1fr); align-items: center; gap: 10px; min-width: 0; }
+.meter-value { font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text-primary); min-width: 46px; text-align: right; }
+.meter-track { position: relative; height: 8px; border-radius: var(--radius-pill); background: var(--bg-raised); }
+.meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; transform-origin: left center; }
+.meter-fill.good { background: var(--green-fill); }
+.meter-fill.warn { background: var(--amber-fill); }
+.meter-fill.bad  { background: var(--red-fill); }
+.meter-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 1px; background: var(--text-subtle); }
+
+/* ── Week timetable ─────────────────────────────────────────── */
+.tt { --tt-hour: 58px; position: relative; display: grid; font-size: 13px; }
+.tt-head { display: contents; }
+.tt-dayhead {
+  position: sticky; top: 0; z-index: 2;
+  padding: 10px 8px 8px; text-align: left;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.tt-dayhead .d { font: 500 10.5px/1.2 var(--font-mono); letter-spacing: var(--tracking-mono); text-transform: uppercase; color: var(--text-muted); }
+.tt-dayhead .n { font: 650 20px/1.1 var(--font-display); letter-spacing: -0.02em; color: var(--text-primary); margin-top: 2px; }
+.tt-dayhead.is-today .n { color: var(--brand-text); }
+.tt-dayhead.is-blocked .d::after { content: ' · no classes'; color: var(--amber); }
+.tt-hours { position: relative; }
+.tt-hour { height: var(--tt-hour); font: 500 10.5px/1 var(--font-mono); color: var(--text-muted); text-align: right; padding: 0 8px 0 0; transform: translateY(-5px); }
+/* The first label would sit under the sticky day headers. */
+.tt-hour:first-child { visibility: hidden; }
+.tt-col { position: relative; border-left: 1px solid var(--border); }
+.tt-col.is-today { background: color-mix(in srgb, var(--brand) 3.5%, transparent); }
+.tt-col.is-blocked {
+  background-image: repeating-linear-gradient(135deg, transparent 0 8px, color-mix(in srgb, var(--amber-fill) 10%, transparent) 8px 10px);
+}
+.tt-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed color-mix(in srgb, var(--border) 70%, transparent); }
+.tt-now { position: absolute; left: -1px; right: 0; height: 2px; background: var(--red-fill); z-index: 1; }
+.tt-now::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--red-fill); }
+
+.tt-slot {
+  position: absolute; left: 4px; right: 4px; z-index: 1;
+  display: flex; flex-direction: column; gap: 2px; overflow: hidden;
+  padding: 7px 9px 7px 11px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--border);
+  text-align: left; cursor: pointer; font: inherit; color: var(--text-primary);
+  transition: box-shadow var(--duration-fast) var(--ease-state), transform var(--duration-fast) var(--ease-state);
+}
+.tt-slot::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--brand); }
+.tt-slot:hover { transform: translateY(-1px); box-shadow: var(--shadow-md), inset 0 0 0 1px var(--border-strong); }
+.tt-slot:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.tt-slot .t { font: 500 10.5px/1.2 var(--font-mono); color: var(--text-muted); }
+.tt-slot .c { font-weight: 650; font-size: 12.5px; line-height: 1.25; }
+.tt-slot .s { font-size: 11.5px; color: var(--text-subtle); margin-top: auto; }
+.tt-slot.held::before     { background: var(--green-fill); }
+.tt-slot.live             { box-shadow: var(--shadow-md), inset 0 0 0 1.5px var(--green-fill); }
+.tt-slot.live::before     { background: var(--green-fill); }
+.tt-slot.missed::before   { background: var(--red-fill); }
+.tt-slot.blocked          { opacity: .6; cursor: default; }
+.tt-slot.blocked::before  { background: var(--amber-fill); }
+.tt-slot.blocked .c       { text-decoration: line-through; text-decoration-color: var(--text-muted); }
+
+/* Agenda: the phone layout of the same week */
+.agenda { display: flex; flex-direction: column; gap: 18px; }
+.agenda-day h3 { font: 500 11px/1.2 var(--font-mono); letter-spacing: var(--tracking-mono); text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.agenda-day.is-today h3 { color: var(--brand-text); }
+.agenda-item {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  padding: 12px 14px; border-radius: 12px; background: var(--bg-card);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--border);
+  text-align: left; width: 100%; font: inherit; color: var(--text-primary); cursor: pointer;
+}
+.agenda-item + .agenda-item { margin-top: 8px; }
+.agenda-item .t { font: 600 13px/1.2 var(--font-mono); }
+.agenda-item .t small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+
+/* ── Planner ("what it takes") ──────────────────────────────── */
+.plan-scale { position: relative; height: 12px; border-radius: var(--radius-pill); background: var(--bg-raised); overflow: visible; }
+.plan-scale .now  { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--text-subtle); opacity: .35; }
+.plan-scale .proj { position: absolute; inset: 0 auto 0 0; border-radius: inherit; transform-origin: left center; }
+.plan-scale .proj.good { background: var(--green-fill); }
+.plan-scale .proj.warn { background: var(--amber-fill); }
+.plan-scale .proj.bad  { background: var(--red-fill); }
+.plan-scale .min  { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--text-primary); border-radius: 1px; }
+.plan-take { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-left: clamp(0px, 2vw, 24px); border-left: 1px solid var(--border); }
+@media (max-width: 1000px) { .plan-take { padding-left: 0; border-left: 0; padding-top: 16px; border-top: 1px solid var(--border); } }
+.plan-slider { width: 100%; accent-color: var(--brand); height: 28px; cursor: pointer; }
+.plan-verdict { font: 650 clamp(22px, 2.4vw, 30px)/1.1 var(--font-display); letter-spacing: -0.03em; color: var(--text-primary); }
+.plan-verdict em { font-style: normal; color: var(--brand-text); }
+
+/* ── Projector ──────────────────────────────────────────────── */
+.projector {
+  min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 72px); align-items: center;
+  padding: clamp(24px, 4vw, 64px); background: #050A18; color: #EEF1F7;
+}
+.projector .qr-frame { position: relative; justify-self: center; width: min(78vh, 46vw); aspect-ratio: 1; padding: 4%; border-radius: 28px; background: #fff; }
+.projector .qr-frame svg { width: 100%; height: 100%; display: block; }
+.projector .count { font: 700 clamp(72px, 12vw, 180px)/0.9 var(--font-display); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; }
+.projector .count small { font-size: 0.32em; letter-spacing: -0.02em; color: rgba(238, 241, 247, .55); }
+.projector .kick { font: 500 13px/1.3 var(--font-mono); letter-spacing: var(--tracking-mono); text-transform: uppercase; color: rgba(238, 241, 247, .6); }
+/* Always dark, whatever the app theme: global heading colours don't apply. */
+.projector .title, .projector .count { color: #EEF1F7; }
+.projector .title { font: 650 clamp(28px, 3.6vw, 56px)/1.02 var(--font-display); letter-spacing: -0.035em; }
+.projector .bar { height: 10px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.projector .bar > span { display: block; height: 100%; background: #2BD9B5; transform-origin: left center; }
+.projector .code { font: 600 clamp(20px, 2.2vw, 34px)/1 var(--font-mono); letter-spacing: 0.18em; }
+.projector .tools { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; opacity: .35; transition: opacity var(--duration-base) var(--ease-state); }
+.projector .tools:hover, .projector .tools:focus-within { opacity: 1; }
+.projector .tools button, .projector .tools a {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 99px;
+  background: rgba(255, 255, 255, .08); color: #EEF1F7; border: 1px solid rgba(255, 255, 255, .14);
+  font: 500 13px/1 var(--font-body); cursor: pointer; text-decoration: none;
+}
+@media (max-width: 900px) {
+  .projector { grid-template-columns: 1fr; text-align: center; padding-top: 72px; }
+  .projector .qr-frame { width: min(86vw, 60vh); }
+}
+
+/* ── Small shared bits ──────────────────────────────────────── */
+/* A long segmented filter scrolls sideways on a phone instead of being cut off. */
+.seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.seg::-webkit-scrollbar { display: none; }
+.seg button { flex-shrink: 0; white-space: nowrap; }
+.sig.good { color: var(--green); }
+.role-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--radius-pill); font: 600 11px/1.5 var(--font-body); background: var(--violet-bg); color: var(--violet); border: 1px solid var(--violet-border); }
+.hub-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+@media (max-width: 900px) { .hub-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stack { display: flex; flex-direction: column; gap: var(--space-4); }
+.split { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+@media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
+.link-row { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-text); font-weight: 600; font-size: var(--text-sm); text-decoration: none; }
+.link-row:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* The chart's minimum line */
+.trend .threshold line { stroke: var(--text-subtle); stroke-width: 1.25; stroke-dasharray: 5 4; }
+.trend .threshold text { fill: var(--text-subtle); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reg-cell, .tt-slot { transition: none; }
+}

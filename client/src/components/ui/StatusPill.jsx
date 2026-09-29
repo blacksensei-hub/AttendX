@@ -10,7 +10,7 @@ import { EASE, DURATION }          from '../../lib/motion';
  * appeals, attendance, reports, schedules, etc.
  *
  * Props:
- *   status       — 'present' | 'late' | 'absent' | 'pending' |
+ *   status       — 'present' | 'late' | 'absent' | 'excused' | 'pending' |
  *                  'approved' | 'rejected' | 'scheduled' |
  *                  'live' | 'closed' | 'open'
  *   size         — 'sm' (default) | 'md'
@@ -24,6 +24,9 @@ const STYLES = {
   present:   { color: 'var(--green)',  bg: 'var(--green-bg)',  border: 'var(--green-border)'   },
   late:      { color: 'var(--amber)',  bg: 'var(--amber-bg)',  border: 'var(--amber-border)'   },
   absent:    { color: 'var(--red)',    bg: 'var(--red-bg)',    border: 'var(--red-border)'     },
+  // Counts towards the minimum without a scan: violet, never a "present" teal.
+  excused:   { color: 'var(--violet)', bg: 'var(--violet-bg)', border: 'var(--violet-border)'  },
+  withdrawn: { color: 'var(--text-muted)', bg: 'var(--bg-raised)', border: 'var(--border)'     },
   pending:   { color: 'var(--amber)',  bg: 'var(--amber-bg)',  border: 'var(--amber-border)'   },
   approved:  { color: 'var(--green)',  bg: 'var(--green-bg)',  border: 'var(--green-border)'   },
   rejected:  { color: 'var(--red)',    bg: 'var(--red-bg)',    border: 'var(--red-border)'     },

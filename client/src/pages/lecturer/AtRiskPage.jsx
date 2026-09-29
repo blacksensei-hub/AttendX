@@ -6,6 +6,7 @@ import {
   Settings, CheckCircle,
 }                                                    from 'lucide-react';
 import toast                                         from 'react-hot-toast';
+import { Link }                                      from 'react-router-dom';
 
 import api                                           from '../../services/api';
 import PageShell, { PageHeader }                     from '../../components/layout/PageShell';
@@ -75,7 +76,7 @@ export default function AtRiskPage() {
   if (isLoading) {
     return (
       <PageShell>
-        <PageHeader title="Attendance Alerts" subtitle="Loading…" />
+        <PageHeader kicker="Lecturer / Alerts" title="Below the" accent="minimum." subtitle="Loading…" />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {Array.from({ length: 2 }).map((_, i) => (
             <div
@@ -97,11 +98,13 @@ export default function AtRiskPage() {
 
       {/* ── Header ──────────────────────────────────────────── */}
       <PageHeader
-        title="Attendance Alerts"
+        kicker="Lecturer / Alerts"
+        title="Below the"
+        accent="minimum."
         subtitle={
           totalAtRisk > 0
-            ? `${totalAtRisk} student${totalAtRisk !== 1 ? 's are' : ' is'} below their class attendance threshold`
-            : 'All students are meeting their attendance requirements'
+            ? `${totalAtRisk} student${totalAtRisk !== 1 ? 's are' : ' is'} below their class minimum. Open a name for their whole register.`
+            : 'Every student is meeting their class minimum.'
         }
       />
 
@@ -496,6 +499,7 @@ function ClassRiskCard({
               <StudentRiskRow
                 key={student.studentId}
                 student={student}
+                classId={cls.classId}
                 index={idx}
                 threshold={cls.threshold}
                 isLast={idx === cls.students.length - 1}
@@ -509,7 +513,7 @@ function ClassRiskCard({
 }
 
 // ─── Student risk row ──────────────────────────────────────────
-function StudentRiskRow({ student, index, threshold, isLast }) {
+function StudentRiskRow({ student, classId, index, threshold, isLast }) {
   // Three-tier colour logic:
   //   above threshold          → green (shouldn't hit this page but safe fallback)
   //   within 10% of threshold  → amber warning
@@ -563,7 +567,11 @@ function StudentRiskRow({ student, index, threshold, isLast }) {
           textOverflow: 'ellipsis',
           whiteSpace:   'nowrap',
         }}>
-          {student.studentName}
+          <Link to={`/lecturer/classes/${classId}/students/${student.studentId}`}
+                style={{ color: 'inherit', textDecoration: 'none' }}
+                title="Open their register for this class">
+            {student.studentName}
+          </Link>
         </p>
         {student.studentIdDisplay && (
           <p style={{

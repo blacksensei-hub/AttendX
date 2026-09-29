@@ -110,7 +110,7 @@ exports.pdf = async (req, res) => {
     doc.font('Helvetica-Bold').fontSize(9).fillColor(COBALT).text('ATTENDX  /  INSTITUTION REPORT', 50, 50);
     doc.font('Helvetica-Bold').fontSize(22).fillColor(INK).text(`Attendance, ${data.range.label}`, 50, 68);
     doc.font('Helvetica').fontSize(9.5).fillColor(MUTED)
-      .text(`Generated ${new Date().toUTCString().slice(0, 22)} UTC. Closed sessions only; present and late count as attended.`, 50, 98);
+      .text(`Generated ${new Date().toUTCString().slice(0, 22)} UTC. Closed sessions only; present, late and excused count as attended.`, 50, 98);
 
     // Key numbers
     const kpis = [

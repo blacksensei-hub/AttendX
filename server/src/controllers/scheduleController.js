@@ -2,6 +2,29 @@ const { ClassSchedule, Class } = require('../models');
 const { success, error }       = require('../utils/apiResponse');
 const { findClassFor }         = require('../services/classAccess');
 
+// ─── Validation ───────────────────────────────────────────────
+// The same rules the database enforces (server/sql/2026-10-03_schedule_rules.sql),
+// checked here first so a bad value gets a clear 400 instead of a
+// database error. `partial` is for edits: only the fields sent are checked.
+const isInt = (v) => v !== null && v !== '' && Number.isInteger(Number(v));
+function slotProblem(f, { partial = false } = {}) {
+  const has = (k) => !partial || f[k] !== undefined;
+  if (has('day_of_week') && !(isInt(f.day_of_week) && f.day_of_week >= 0 && f.day_of_week <= 6))
+    return 'day_of_week must be between 0 (Sunday) and 6 (Saturday)';
+  if (has('start_time') && !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(String(f.start_time ?? '')))
+    return 'start_time is required (format: HH:MM)';
+  if (has('duration_mins') && !(isInt(f.duration_mins) && f.duration_mins >= 1 && f.duration_mins <= 600))
+    return 'Duration must be between 1 and 600 minutes';
+  if (has('qr_interval') && !(isInt(f.qr_interval) && f.qr_interval >= 1))
+    return 'The QR interval must be a whole number of seconds';
+  if (has('late_threshold') && !(isInt(f.late_threshold) && f.late_threshold >= 0))
+    return '"Late after" must be a whole number of minutes';
+  // Not sent when a slot is created (the database defaults it to true).
+  if (f.is_active !== undefined && typeof f.is_active !== 'boolean')
+    return 'is_active must be true or false';
+  return null;
+}
+
 // ─── Get all schedules for a class ────────────────────────────
 exports.getClassSchedules = async (req, res) => {
   try {
@@ -34,12 +57,8 @@ exports.createSchedule = async (req, res) => {
       late_threshold = 5,
     } = req.body;
 
-    if (day_of_week === undefined || day_of_week < 0 || day_of_week > 6)
-      return res.status(400).json(error('day_of_week must be between 0 (Sunday) and 6 (Saturday)'));
-    if (!start_time)
-      return res.status(400).json(error('start_time is required (format: HH:MM)'));
-    if (duration_mins < 1 || duration_mins > 600)
-      return res.status(400).json(error('Duration must be between 1 and 600 minutes'));
+    const problem = slotProblem({ day_of_week, start_time, duration_mins, qr_interval, late_threshold });
+    if (problem) return res.status(400).json(error(problem));
 
     // Verify class ownership
     const cls = await findClassFor(req.user.id, classId, 'edit');
@@ -84,6 +103,8 @@ exports.updateSchedule = async (req, res) => {
     allowed.forEach(k => {
       if (updates[k] !== undefined) payload[k] = updates[k];
     });
+    const problem = slotProblem(payload, { partial: true });
+    if (problem) return res.status(400).json(error(problem));
 
     await schedule.update(payload);
 

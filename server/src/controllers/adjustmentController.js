@@ -166,13 +166,14 @@ exports.getSessionAuditTrail = async (req, res) => {
         s.email        AS "student.email",
         s.student_id   AS "student.studentId",
 
-        -- Lecturer who made the adjustment
-        l.id           AS "adjustedBy.id",
-        l.name         AS "adjustedBy.name"
+        -- Lecturer who made the adjustment (their account may since
+        -- have been deleted; the change itself is kept)
+        l.id                               AS "adjustedBy.id",
+        COALESCE(l.name, 'A deleted user') AS "adjustedBy.name"
 
       FROM attendance_adjustments aa
       INNER JOIN users s ON s.id = aa.student_id
-      INNER JOIN users l ON l.id = aa.adjusted_by
+      LEFT  JOIN users l ON l.id = aa.adjusted_by
 
       WHERE aa.session_id = :sessionId
 

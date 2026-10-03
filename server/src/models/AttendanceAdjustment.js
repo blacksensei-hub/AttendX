@@ -19,9 +19,12 @@ const AttendanceAdjustment = sequelize.define('AttendanceAdjustment', {
     type:      DataTypes.UUID,
     allowNull: false,
   },
+  // Set when the change is made; becomes NULL if that lecturer's
+  // account is later deleted, so the history outlives them
+  // (server/sql/2026-10-03_delete_rules.sql).
   adjusted_by: {
     type:      DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
   },
   old_status: {
     type:      DataTypes.STRING(20),

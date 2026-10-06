@@ -27,9 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # The Node used to write the lockfiles. npm 10 (Node 22) rejects the
-          # client's: it wants the optional peers of @napi-rs/wasm-runtime
-          # listed, and npm 11 leaves them out. node --test globs need 22+.
+          # The Node used locally. node --test globs need 22 or later.
           node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
@@ -48,6 +46,10 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: client/package-lock.json
-      - run: npm ci
+      # npm install, as Vercel does, not npm ci: the lockfile is written on
+      # Windows, which leaves out the optional peers of @napi-rs/wasm-runtime
+      # (@emnapi/core, @emnapi/runtime), and npm ci on Linux refuses it. The
+      # locked versions are still used; only the missing entries are filled.
+      - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run build

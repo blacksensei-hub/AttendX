@@ -22,6 +22,7 @@ import StatTile, { SectionTitle }               from '../../components/ui/StatTi
 import { AnimatedList, AnimatedItem }           from '../../components/ui/AnimatedList';
 import { SPRING, TAP, EASE }                    from '../../lib/motion';
 import { shortName, withStop }                  from '../../lib/names';
+import { plural }                               from '../../components/teaching/format';
 
 /**
  * ═════════════════════════════════════════════════════════════════
@@ -270,11 +271,7 @@ export default function StudentDashboard() {
               style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
             >
               {atRisk.map(r => {
-                const sessionsNeeded = r.totalSessions > 0
-                  ? Math.max(0, Math.ceil(
-                      (r.threshold / 100 * r.totalSessions) - r.attended
-                    ))
-                  : 0;
+                const way = recoveryText(r);
 
                 return (
                   <AnimatedItem key={r.classId}>
@@ -303,13 +300,13 @@ export default function StudentDashboard() {
                           marginTop: '2px',
                         }}>
                           {r.attended} of {r.totalSessions} sessions attended
-                          {sessionsNeeded > 0 && (
+                          {way && (
                             <span style={{
                               color:     'var(--red)',
                               marginLeft: '6px',
                               fontWeight: 500,
                             }}>
-                              · attend {sessionsNeeded} more to reach {r.threshold}%
+                              · {way}
                             </span>
                           )}
                         </p>
@@ -651,6 +648,22 @@ export default function StudentDashboard() {
 // ─── Empty state for charts ────────────────────────────────────
 // Used when there isn't enough data to render the chart meaningfully.
 // Same height as a real chart so the layout doesn't jump.
+/**
+ * The way back above the minimum, worded from the server's recovery plan
+ * (server/src/utils/attendanceMath.js). Every session attended also adds
+ * to the total, so this is more than "minimum × total − attended".
+ */
+function recoveryText({ recovery: plan, threshold }) {
+  if (!plan) return null;
+  if (plan.reachable)
+    return plan.sessions > 0
+      ? `attend the next ${plural(plan.sessions, 'session')} in a row to get back to ${threshold}%`
+      : null;
+  if (plan.sessions === null) return `${threshold}% can't be reached again after a missed session`;
+  if (plan.remaining === 0) return `no sessions left this semester to get back to ${threshold}%`;
+  return `can't reach ${threshold}% this semester, even attending all ${plan.remaining} left`;
+}
+
 function ChartEmptyState({ icon: Icon, title, subtitle }) {
   return (
     <div style={{

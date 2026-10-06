@@ -2,6 +2,9 @@ const { Class, Session, Attendance, Enrollment, User } = require('../models');
 const { success, error } = require('../utils/apiResponse');
 const { QueryTypes }     = require('sequelize');
 const { findClassFor, taughtBySql } = require('../services/classAccess');
+const { currentSemester } = require('../services/calendarService');
+const { remainingSlots }  = require('../services/timetableService');
+const { recoveryPlan }    = require('../utils/attendanceMath');
 const nodemailer         = require('nodemailer');
 
 // ─── Nodemailer transporter ───────────────────────────────────
@@ -157,20 +160,37 @@ exports.getMyAttendanceRates = async (req, res) => {
       type:         QueryTypes.SELECT,
     });
 
+    // Sessions still timetabled this semester, so the way back can be
+    // checked against what is actually left (same count as the planner).
+    const semester  = await currentSemester();
+    const remaining = semester
+      ? await remainingSlots(rates.map(r => r.classId), semester.ends_on)
+      : null;
+
     const formatted = rates.map(r => {
       const threshold      = parseInt(r.threshold) || 75;
       const attendanceRate = r.attendanceRate !== null
         ? parseInt(r.attendanceRate)
         : null;
+      const totalSessions  = parseInt(r.totalSessions);
+      const attended       = parseInt(r.attended);
+      const atRisk         = attendanceRate !== null && attendanceRate < threshold;
 
       return {
         classId:        r.classId,
         className:      r.className,
         threshold,
-        totalSessions:  parseInt(r.totalSessions),
-        attended:       parseInt(r.attended),
+        totalSessions,
+        attended,
         attendanceRate,
-        atRisk:         attendanceRate !== null && attendanceRate < threshold,
+        atRisk,
+        // How to get back above the minimum: see utils/attendanceMath.
+        recovery: atRisk
+          ? recoveryPlan({
+              attended, total: totalSessions, threshold,
+              remaining: remaining ? (remaining.get(r.classId) ?? 0) : null,
+            })
+          : null,
       };
     });
 
@@ -258,6 +278,11 @@ exports.sendThresholdWarnings = async (req, res) => {
     if (atRisk.length === 0)
       return res.json(success({ sent: 0 }, 'No at-risk students to notify'));
 
+    const semester  = await currentSemester();
+    const remaining = semester
+      ? (await remainingSlots([cls.id], semester.ends_on)).get(cls.id) ?? 0
+      : null;
+
     // Send all emails in parallel — allSettled means one failed address
     // never prevents the rest from receiving their warning.
     const results = await Promise.allSettled(
@@ -270,6 +295,7 @@ exports.sendThresholdWarnings = async (req, res) => {
           threshold,
           totalSessions:  parseInt(student.totalSessions),
           attended:       parseInt(student.attended),
+          remaining,
         })
       )
     );
@@ -313,12 +339,19 @@ exports.updateThreshold = async (req, res) => {
 // ─── Threshold warning email ──────────────────────────────────
 async function sendThresholdWarningEmail({
   to, studentName, className, attendanceRate, threshold,
-  totalSessions, attended,
+  totalSessions, attended, remaining,
 }) {
-  const sessionsNeeded = Math.max(
-    0,
-    Math.ceil((threshold / 100 * totalSessions) - attended)
-  );
+  const plan = recoveryPlan({ attended, total: totalSessions, threshold, remaining });
+  const action = plan.reachable
+    ? `You need to attend the next
+                  <strong>${plan.sessions} session${plan.sessions !== 1 ? 's' : ''} in a row</strong>
+                  to bring your rate back up to ${threshold}%.`
+    : plan.sessions === null
+      ? `A ${threshold}% minimum can't be reached again once a session
+                  has been missed. Please speak to your lecturer.`
+      : `Even attending all ${plan.remaining} session${plan.remaining !== 1 ? 's' : ''}
+                  left this semester, your rate can't get back to ${threshold}%.
+                  Please speak to your lecturer.`;
 
   const html = `
     <!DOCTYPE html>
@@ -399,11 +432,7 @@ async function sendThresholdWarningEmail({
                            border-left:3px solid #ef4444;
                            padding:10px 14px;
                            border-radius:0 6px 6px 0;margin:0 0 16px;">
-                  You need to attend at least
-                  <strong>
-                    ${sessionsNeeded} more session${sessionsNeeded !== 1 ? 's' : ''}
-                  </strong>
-                  consecutively to bring your rate back above ${threshold}%.
+                  ${action}
                 </p>
 
                 <p style="color:#64748b;font-size:13px;margin:0;">

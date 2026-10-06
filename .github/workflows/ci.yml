@@ -1,0 +1,55 @@
+# Checks every pull request and every push to main: the server's tests, and
+# the web app's lint and production build. Nothing here deploys; Vercel and
+# Render still deploy main as before.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# One run per ref: a newer push cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The Node used locally. node --test globs need 22 or later.
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      # npm install, as Vercel does, not npm ci: the lockfile is written on
+      # Windows, which leaves out the optional peers of @napi-rs/wasm-runtime
+      # (@emnapi/core, @emnapi/runtime), and npm ci on Linux refuses it. The
+      # locked versions are still used; only the missing entries are filled.
+      - run: npm install --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build

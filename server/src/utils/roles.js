@@ -1,10 +1,11 @@
 // server/src/utils/roles.js
 
 /**
- * The roles anyone may pick when signing up. Admin accounts come only
- * from the admin console (bulk import, or a role change by an admin),
- * never from the public register endpoint: the sign-up form only offers
- * these two, but the server must not trust the form.
+ * The roles anyone may pick when signing up. Admin accounts are made only
+ * in the admin console, where an admin changes an account's role (bulk
+ * import also creates only students and lecturers), never through the
+ * public register endpoint: the sign-up form only offers these two, but
+ * the server must not trust the form.
  */
 const SIGNUP_ROLES = ['student', 'lecturer'];
 

@@ -18,7 +18,7 @@ fake('models/index.js', {
 const { generateToken, validateToken } = require('./qrService');
 
 beforeEach(() => {
-  row = { token: 'tok', session_id: SESSION, used: false, expires_at: new Date(Date.now() + 5000) };
+  row = { token: 'tok', session_id: SESSION, expires_at: new Date(Date.now() + 5000) };
   created.length = 0;
   updates.length = 0;
 });
@@ -41,9 +41,11 @@ test("another session's code is refused", async () => {
   assert.match(result.reason, /different session/);
 });
 
-test('a code marked used is refused', async () => {
-  row.used = true;
-  assert.equal((await validateToken('tok', SESSION)).valid, false);
+test('the whole class can scan the same code', async () => {
+  // Scanning doesn't use a code up; one scan per student is the attendance
+  // table's unique index, not the code's.
+  assert.equal((await validateToken('tok', SESSION)).valid, true);
+  assert.equal((await validateToken('tok', SESSION)).valid, true);
 });
 
 test('an expired code is refused, and says how late it was', async () => {

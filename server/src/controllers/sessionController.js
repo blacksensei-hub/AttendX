@@ -177,7 +177,6 @@ exports.getCurrentQR = async (req, res) => {
     let qr = await QRToken.findOne({
       where: {
         session_id: sessionId,
-        used:       false,
         expires_at: { [Op.gt]: cutoff },
       },
       order: [['issued_at', 'DESC']],

@@ -45,6 +45,24 @@ const loginLimiter = rateLimit({
   },
 });
 
+// ─── Sign-up limiter ──────────────────────────────────────────
+// Per IP, counting only accounts actually created (a typo or a refused
+// form doesn't use the allowance). Generous on purpose: a lecture hall may
+// sign up together on one campus WiFi address at the start of term, so 100
+// new accounts an hour from one network are allowed. A script creating
+// accounts in bulk is stopped.
+const signupLimiter = rateLimit({
+  windowMs:           60 * 60 * 1000, // 1 hour
+  max:                100,            // 100 new accounts per IP per hour
+  skipFailedRequests: true,           // only successful sign-ups count
+  standardHeaders:    true,
+  legacyHeaders:      false,
+  message: {
+    success: false,
+    message: 'Too many new accounts from this network in the last hour. Please try again later.',
+  },
+});
+
 // ─── Global API limiter ───────────────────────────────────────
 // Loose catch-all, per IP. Never trips for normal use; just stops a script
 // hammering the API. Generous enough that a class refreshing dashboards and
@@ -60,4 +78,4 @@ const apiLimiter = rateLimit({
   },
 });
 
-module.exports = { loginLimiter, apiLimiter };
+module.exports = { loginLimiter, signupLimiter, apiLimiter };

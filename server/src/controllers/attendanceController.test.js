@@ -61,7 +61,7 @@ const io = { to: () => ({ emit: (event, data) => emitted.push({ event, data }) }
 
 beforeEach(() => {
   db = {
-    token: { token: 'tok', session_id: SESSION, used: false, expires_at: new Date(Date.now() + 5000) },
+    token: { token: 'tok', session_id: SESSION, expires_at: new Date(Date.now() + 5000) },
     session: {
       id: SESSION, class_id: CLASS_ID, status: 'open',
       geo_lat: HALL.lat, geo_lng: HALL.lng, geo_radius: 100,

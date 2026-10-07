@@ -11,7 +11,7 @@ async function generateToken(sessionId, intervalSeconds = 5) {
   // Expire all existing tokens for this session
   await QRToken.update(
     { expires_at: new Date() },   // Set expiry to now = expired
-    { where: { session_id: sessionId, used: false, expires_at: { [Op.gt]: new Date() } } }
+    { where: { session_id: sessionId, expires_at: { [Op.gt]: new Date() } } }
   );
 
   // Create new token: random hex + session prefix for fast lookup
@@ -38,7 +38,6 @@ async function validateToken(token, sessionId) {
 
   if (!qr)                         return { valid: false, reason: 'QR code not recognised' };
   if (qr.session_id !== sessionId) return { valid: false, reason: 'QR code is for a different session' };
-  if (qr.used)                     return { valid: false, reason: 'QR code has already been used' };
 
   const now = new Date();
   const expiresAt = new Date(qr.expires_at);

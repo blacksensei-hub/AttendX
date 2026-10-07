@@ -1,4 +1,4 @@
-const { Session, Attendance, Enrollment, QRToken } = require('../models');
+const { Session, Attendance, Enrollment, QRToken, User } = require('../models');
 const { validateToken }                   = require('../services/qrService');
 const { isWithinGeofence, isSuspiciousCoordinate } = require('../services/geoService');
 const { success, error }                  = require('../utils/apiResponse');
@@ -88,6 +88,20 @@ exports.markAttendance = async (req, res) => {
       deviceId: deviceId ?? null, ip: req.ip, lat: latitude, lng: longitude, ...extra,
     });
 
+    // 3b. Scanning is app only. The app sends the id of the phone it runs
+    //     on, and sign-in binds each student's account to one phone, so a
+    //     scan has to carry that phone's id. Without it, anyone holding a
+    //     fresh code (read off a video call, say) could mark attendance
+    //     from any browser, with no location and no phone check.
+    const me = await User.findByPk(studentId, { attributes: ['bound_mobile_device_id'] });
+    const boundPhone = me?.bound_mobile_device_id ?? null;
+    if (!boundPhone || !deviceId || deviceId !== boundPhone) {
+      refuse('wrong_phone');
+      return res.status(403).json(error(boundPhone
+        ? 'Scan with the AttendX app on the phone registered to your account.'
+        : 'Sign in to the AttendX app on your phone, then scan with it.'));
+    }
+
     const qrResult = await validateToken(qrToken, sessionId);
     if (!qrResult.valid) {
       refuse(qrResult.expiredMsAgo !== undefined ? 'expired_token' : 'invalid_token');
@@ -127,6 +141,17 @@ exports.markAttendance = async (req, res) => {
         refuse('bad_coordinates');
         return res.status(400).json(error('Invalid GPS coordinates received.'));
       }
+    }
+
+    // 6b. A class with a classroom zone needs the phone's location. The
+    //     app sends 0,0 when the student has turned location off, which
+    //     would otherwise skip the zone check below.
+    const hasZone = Boolean(session.geo_lat && session.geo_lng);
+    if (hasZone && !(latitude && longitude)) {
+      refuse('no_location');
+      return res.status(400).json(error(
+        'Turn on location for AttendX, then scan again. This class checks that you are in the room.'
+      ));
     }
 
     // 7. Geofence validation.
@@ -188,7 +213,6 @@ exports.markAttendance = async (req, res) => {
     //     so we only hit the database a single time for this purpose.
     //     Crucially, we now include 'student_id' so the lecturer's dashboard
     //     can display the official institutional ID alongside the name.
-    const { User } = require('../models');
     const fullUser = await User.findByPk(studentId, {
       attributes: ['id', 'name', 'email', 'student_id'],
     });

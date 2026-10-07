@@ -23,16 +23,6 @@ export const sessionService = {
   getActiveSessions: () =>
     api.get('/sessions/active').then(r => r.data),
 
-  // Student: mark attendance via QR token
-  markAttendance: (sessionId, qrToken, geo) =>
-  api.post(`/attendance/mark`, {
-    sessionId,
-    qrToken,
-    latitude:  geo?.latitude  ?? 0,
-    longitude: geo?.longitude ?? 0,
-    isMockGps: false,
-  }).then(r => r.data),
-
   // Get current QR token (for lecturer to display)
   getCurrentQR: (sessionId) =>
     api.get(`/sessions/${sessionId}/qr`).then(r => r.data),

@@ -9,7 +9,7 @@ Class attendance for GCTU that takes seconds and is hard to fake. A QR code on t
 AttendX has three roles, and each sees the same register differently.
 
 - **Lecturers** open a session, or let the timetable open it, and project the rotating code. Each class has a page showing every student's rate against the minimum. Lecturers review appeals and excused absences, share a class with co-lecturers and teaching assistants, and export attendance as a grade.
-- **Students** scan with the mobile app or any phone browser. They see their timetable and a planner that works out what each class still needs from the sessions left this semester. They can ask for an absence to be excused, appeal a record, and download an attendance statement.
+- **Students** scan with the mobile app; the website shows them how. They see their timetable and a planner that works out what each class still needs from the sessions left this semester. They can ask for an absence to be excused, appeal a record, and download an attendance statement.
 - **Admins** get a separate console for the whole institution:
   - an audit trail of every sensitive change
   - bulk account import with emailed invites
@@ -22,8 +22,8 @@ AttendX has three roles, and each sees the same register differently.
 Every scan must pass four checks:
 
 1. **The code is fresh.** Each QR code works for five seconds after it appears, plus a two-second grace period, and each new code ends the one before. A student is marked once per session at most.
-2. **The phone is in the room.** A scan from the mobile app carries the phone's location, and the server checks its distance from the classroom. It rejects impossible coordinates and mocked GPS on Android. Scans from a phone's browser don't send a location yet, so this check covers the app only.
-3. **The phone belongs to the student.** Each student's account is bound to one phone in the mobile app. A new phone needs an admin to reset it.
+2. **The phone is in the room.** The scan carries the phone's location, and the server checks its distance from the classroom. In a class with a classroom zone, a scan without a location is refused. It also rejects impossible coordinates and mocked GPS on Android.
+3. **The phone belongs to the student.** Each student's account is bound to one phone at sign-in, and a scan must come from the app on that phone, so scanning is app only. A new phone needs an admin to reset it.
 4. **One phone, one person.** If one phone marks several accounts in a session, the lecturer is told on the spot.
 
 Refused scans are kept too. Six patterns across them raise a flag for an admin to review: one phone used by several students, a location-spoofing app, repeated scans from outside the room, repeated sign-ins from the wrong phone, several students at the exact same position, and too many phone resets. A flag never blocks anyone by itself: a person decides, and the decision is recorded in the audit trail.

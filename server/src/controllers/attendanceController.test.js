@@ -39,7 +39,10 @@ fake('models/index.js', {
       .filter(r => r.session_id === where.session_id && r.device_id === where.device_id),
   },
   User: {
-    findByPk: async (id) => ({ id, name: `Student ${id}`, email: `${id}@example.test`, student_id: '0123456789' }),
+    findByPk: async (id) => ({
+      id, name: `Student ${id}`, email: `${id}@example.test`, student_id: '0123456789',
+      bound_mobile_device_id: db.boundPhone,
+    }),
     findAll: async ({ where }) => where.id[Object.getOwnPropertySymbols(where.id)[0]]
       .map(id => ({ id, name: `Student ${id}`, student_id: '0123456789' })),
   },
@@ -67,6 +70,7 @@ beforeEach(() => {
     },
     enrolled: true,
     alreadyMarked: false,
+    boundPhone: 'phone-1',
     saved: [],
     earlierOnDevice: [],
   };
@@ -100,6 +104,45 @@ test('the code decides the session, not the id the app sends', async () => {
   const res = await scan({ sessionId: '99999999-9999-4999-8999-999999999999' });
   assert.equal(res.statusCode, 201);
   assert.equal(db.saved[0].session_id, SESSION);
+});
+
+test('a scan from a browser, with no phone id, is refused', async () => {
+  const res = await scan({ deviceId: undefined });
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /AttendX app/);
+  assert.equal(attempts[0].reason, 'wrong_phone');
+  assert.equal(db.saved.length, 0);
+});
+
+test("a scan from a phone that isn't the account's is refused", async () => {
+  const res = await scan({ deviceId: 'phone-2' });
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /phone registered to your account/);
+  assert.equal(attempts[0].reason, 'wrong_phone');
+  assert.equal(db.saved.length, 0);
+});
+
+test('an account with no phone yet is told to sign in to the app first', async () => {
+  db.boundPhone = null;
+  const res = await scan();
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /Sign in to the AttendX app/);
+  assert.equal(db.saved.length, 0);
+});
+
+test('a class with a zone refuses a scan with location turned off', async () => {
+  const res = await scan({ latitude: 0, longitude: 0 });
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.message, /Turn on location/);
+  assert.equal(attempts[0].reason, 'no_location');
+  assert.equal(db.saved.length, 0);
+});
+
+test('a class with no zone takes a scan without a location', async () => {
+  db.session.geo_lat = null;
+  db.session.geo_lng = null;
+  const res = await scan({ latitude: 0, longitude: 0 });
+  assert.equal(res.statusCode, 201);
 });
 
 test('a closed session takes no more scans', async () => {

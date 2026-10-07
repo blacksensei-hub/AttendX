@@ -44,7 +44,6 @@ mobile/          Expo app for students and lecturers
 server/          REST and WebSocket API (deployed on Render)
   src/           routes, controllers, services, models
   sql/           schema changes, applied in date order
-design-system/   design notes for the console and teaching pages
 ```
 
 ## Running it locally

@@ -25,7 +25,7 @@ import '../../components/console/console.css';
  * chart in place; sessions opening or closing trigger a resync; fraud
  * flags join the feed. A slow resync every minute and on reconnect
  * covers anything missed. Class names and counts only, never student
- * names (see design-system/attendx/pages/admin-console.md).
+ * names.
  * ═════════════════════════════════════════════════════════════════
  */
 

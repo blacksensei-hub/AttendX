@@ -9,8 +9,8 @@ import { persist } from 'zustand/middleware';
  * everyone, so the migration resets it once to light. Anyone who
  * switches back to dark after that keeps their choice.
  *
- * The admin console keeps its own preference, dark by default (see
- * design-system/attendx/pages/admin-console.md). The admin AppShell
+ * The admin console keeps its own preference, dark by default. The
+ * admin AppShell
  * sets `inConsole` while it is mounted, and App.jsx applies
  * consoleTheme instead of theme for as long as it is.
  */

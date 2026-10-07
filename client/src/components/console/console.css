@@ -1,6 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
    Admin console (Look B, "control room").
-   Rules: design-system/attendx/pages/admin-console.md.
 
    Everything is scoped under .console (the admin AppShell root),
    so lecturer and student pages never see it. Light mode is the

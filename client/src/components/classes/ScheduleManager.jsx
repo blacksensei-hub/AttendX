@@ -30,7 +30,7 @@ const DAYS = [
  * entries, provides an inline add-form, and lets the lecturer pause,
  * resume, or delete any schedule entry.
  *
- * Uses design-system tokens + motion primitives throughout.
+ * Uses the app's design tokens + motion primitives throughout.
  * ═════════════════════════════════════════════════════════════════
  */
 export default function ScheduleManager({ classId, className }) {

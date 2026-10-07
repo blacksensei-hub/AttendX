@@ -40,8 +40,8 @@ import { EASE, SPRING, TAP }                 from '../../lib/motion';
  * Once the page scrolls, the bar lifts into a centred floating pill,
  * the same move the landing nav makes (styles: .app-nav in App.css).
  *
- * Admins get the console (Look B, design-system/attendx/pages/
- * admin-console.md): its own theme, grouped nav menus from adminNav.js,
+ * Admins get the console (Look B, "control room"): its own theme,
+ * grouped nav menus from adminNav.js,
  * and a Ctrl/Cmd+K command palette.
  *
  * Under 1100px the rail folds into a full-screen menu set in big

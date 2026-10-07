@@ -1,6 +1,11 @@
 # Checks every pull request and every push to main: the server's tests, and
 # the web app's lint and production build. Nothing here deploys; Vercel and
 # Render still deploy main as before.
+#
+# main is protected: a pull request merges only once both jobs below, server
+# and client, have passed (admins can still override). Pull requests can use
+# auto-merge, which waits for both and then merges. Renaming a job means
+# updating the rule in Settings > Branches too.
 name: ci
 
 on:

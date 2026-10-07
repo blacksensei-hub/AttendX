@@ -21,9 +21,9 @@ AttendX has three roles, and each sees the same register differently.
 
 Every scan must pass four checks:
 
-1. **The code is fresh.** Each QR token is single use and expires five seconds after it appears, plus a two-second grace period.
-2. **The phone is in the room.** The scan carries the phone's location, and the server checks its distance from the classroom. It rejects impossible coordinates and mocked GPS on Android.
-3. **The phone belongs to the student.** Each student is bound to one phone. A new phone needs an admin to reset it.
+1. **The code is fresh.** Each QR code works for five seconds after it appears, plus a two-second grace period, and each new code ends the one before. A student is marked once per session at most.
+2. **The phone is in the room.** A scan from the mobile app carries the phone's location, and the server checks its distance from the classroom. It rejects impossible coordinates and mocked GPS on Android. Scans from a phone's browser don't send a location yet, so this check covers the app only.
+3. **The phone belongs to the student.** Each student's account is bound to one phone in the mobile app. A new phone needs an admin to reset it.
 4. **One phone, one person.** If one phone marks several accounts in a session, the lecturer is told on the spot.
 
 Refused scans are kept too. Six patterns across them raise a flag for an admin to review: one phone used by several students, a location-spoofing app, repeated scans from outside the room, repeated sign-ins from the wrong phone, several students at the exact same position, and too many phone resets. A flag never blocks anyone by itself: a person decides, and the decision is recorded in the audit trail.
@@ -119,7 +119,7 @@ Set `EXPO_PUBLIC_API_URL` to the API's address on your network, for example `htt
 ## Tests and checks
 
 ```bash
-cd server && npm test               # unit tests (node:test)
+cd server && npm test               # node:test: the check-in path, phone binding, class permissions
 cd client && npm run lint           # ESLint
 cd client && npm run build          # production build
 ```

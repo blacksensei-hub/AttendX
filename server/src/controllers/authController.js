@@ -3,6 +3,7 @@ const jwt    = require('jsonwebtoken');
 const { User } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 const { success, error } = require('../utils/apiResponse');
+const { signupRole } = require('../utils/roles');
 const { hashToken } = require('../services/inviteService');
 const { recordAttempt } = require('../services/fraudService');
 
@@ -54,7 +55,13 @@ exports.register = async (req, res) => {
     const { name, email, password, role, studentId, department, deviceId, platform } = req.body;
 
     const normalizedEmail = email?.toLowerCase().trim();
-    const finalRole = role || 'student';
+
+    // Only student or lecturer: admins come from the admin console, and
+    // the form's own choice list is no protection against a direct call.
+    const finalRole = signupRole(role);
+    if (!finalRole) {
+      return res.status(400).json(error('Choose student or lecturer'));
+    }
 
     // ── Server-side validation (defense beyond the frontend) ──
     if (finalRole === 'student') {

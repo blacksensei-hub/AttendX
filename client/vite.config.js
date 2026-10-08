@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
 import react            from '@vitejs/plugin-react'
+import tailwindcss      from '@tailwindcss/vite'
 import { visualizer }   from 'rollup-plugin-visualizer'
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(),
 
     // Generates dist/stats.html after each build — open in a
     // browser to see a treemap of every chunk's contents.

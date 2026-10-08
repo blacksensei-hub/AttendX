@@ -56,8 +56,10 @@
   gap: 24px;
   padding: 0 var(--gutter);
   background-color: var(--topbar-bg);
-  backdrop-filter: blur(18px) saturate(160%);
+  /* -webkit- first, throughout this file: the CSS minifier keeps only the
+     last of a prefixed/standard pair, and Chrome reads only the standard one. */
   -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
   border: 1px solid transparent;
   border-bottom-color: var(--border);
   border-radius: 0;
@@ -102,14 +104,14 @@
 .lp-nav.on-hero:not(.is-compact)::before { opacity: 1; }
 .lp-nav.on-hero .lp-nav-bar {
   background-color: transparent;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border-color: transparent;
 }
 .lp-nav.on-hero.is-compact .lp-nav-bar {
   background-color: rgba(7, 13, 31, .55);
-  backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
   border-color: rgba(238, 241, 247, .14);
   box-shadow: 0 16px 40px -18px rgba(0, 0, 0, .65);
 }
@@ -273,8 +275,8 @@
   background: rgba(8, 12, 26, .55);
   border: 1px solid rgba(150, 165, 220, .22);
   border-radius: 10px;
-  backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   text-shadow: 0 1px 3px rgba(5, 5, 10, .85);
   font-family: var(--font-mono);
   font-size: 11px;
